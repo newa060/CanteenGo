@@ -1,0 +1,299 @@
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { Bell, CheckCircle2, ChefHat, Menu as MenuIcon, QrCode, ShieldCheck, X } from 'lucide-react-native';
+import AdminDrawer from '../../components/AdminDrawer';
+import { getThemeColors, useThemeStore } from '../../store/themeStore';
+import { useAuthStore } from '../../store/authStore';
+import { useCanteenOrders, useUpdateOrderStatus } from '../../lib/hooks/useOrders';
+import { orderRepository } from '../../lib/repositories/orderRepository';
+import { useNotifications } from '../../lib/hooks/useNotifications';
+import { showSuccessToast, showErrorToast } from '../../lib/errorHandler';
+import { LoadingScreen } from '../../components/ui/LoadingScreen';
+
+const formatNotifTime = (iso: string): string => {
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    return `${Math.floor(mins / 60)}h ago`;
+  } catch { return 'Recent'; }
+};
+
+export default function PickupVerificationScreen() {
+  const { isDarkMode } = useThemeStore();
+  const colors = getThemeColors(isDarkMode);
+  const user = useAuthStore((s) => s.user);
+  const canteenId = user?.canteen_id || undefined;
+
+  const { data: rawOrders, isLoading } = useCanteenOrders(canteenId);
+  const orders = rawOrders || [];
+  const updateStatus = useUpdateOrderStatus();
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [matchedOrderId, setMatchedOrderId] = useState<string | null>(null);
+  const [pickedUp, setPickedUp] = useState(false);
+
+  const { data: rawNotifs } = useNotifications(user?.id, false);
+  const displayNotifications = useMemo(() => {
+    if (rawNotifs && rawNotifs.length > 0) {
+      return rawNotifs.slice(0, 10).map((n) => ({
+        id: n.id, title: n.title.toUpperCase(), desc: n.message, time: formatNotifTime(n.created_at),
+      }));
+    }
+    return [
+      { id: '1', title: 'LOW STOCK ALERT', desc: 'Some menu items running low.', time: '5m ago' },
+      { id: '2', title: 'PICKUP READY', desc: 'Orders awaiting pickup verification.', time: '10m ago' },
+    ];
+  }, [rawNotifs]);
+
+  const readyOrders = useMemo(() => orders.filter((o) => o.status === 'ready' || o.status === 'preparing'), [orders]);
+  const orderIdsStr = useMemo(() => readyOrders.map((o) => o.id).join(','), [readyOrders]);
+
+  const { data: itemsMap } = useQuery({
+    queryKey: ['pickup_items', orderIdsStr],
+    enabled: readyOrders.length > 0,
+    queryFn: async () => {
+      const map: Record<string, any[]> = {};
+      await Promise.all(readyOrders.map(async (o) => {
+        try { map[o.id] = await orderRepository.getOrderItems(o.id); } catch { map[o.id] = []; }
+      }));
+      return map;
+    },
+  });
+
+  const findMatchingOrder = () => {
+    const searchCode = code.trim().toUpperCase();
+    if (!searchCode) { showErrorToast('Please enter a pickup code'); return; }
+    const match = orders.find((o) => (o.pickup_code || '').toUpperCase() === searchCode);
+    if (match) {
+      setMatchedOrderId(match.id);
+      setPickedUp(match.status === 'completed');
+      showSuccessToast('Customer matched!');
+    } else {
+      setMatchedOrderId(null);
+      setPickedUp(false);
+      showErrorToast('No active order matches this code');
+    }
+  };
+
+  const matchedOrder = useMemo(() => orders.find((o) => o.id === matchedOrderId) || null, [orders, matchedOrderId]);
+  const matchedItems = (matchedOrder && itemsMap?.[matchedOrder.id] as any[]) || [];
+
+  const handleMarkPickedUp = () => {
+    if (matchedOrder) {
+      updateStatus.mutate(
+        { orderId: matchedOrder.id, status: 'completed' },
+        { onSuccess: () => { setPickedUp(true); showSuccessToast('Order released successfully'); } },
+      );
+    }
+  };
+
+  if (isLoading && !orders.length) {
+    return <LoadingScreen message="Loading pickup queue..." />;
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <AdminDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      {/* Top Header */}
+      <View
+        style={{
+          paddingTop: 48,
+          paddingHorizontal: 16,
+          paddingBottom: 14,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: isDarkMode ? 'rgba(255, 102, 0, 0.2)' : colors.border,
+          zIndex: 10,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Pressable
+            onPress={() => setDrawerOpen(true)}
+            style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <MenuIcon color={colors.text} size={20} />
+          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 32, height: 32, backgroundColor: '#FF6600', borderRadius: 4, alignItems: 'center', justifyContent: 'center' }}>
+              <ChefHat color="#FFFFFF" size={18} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#FF6600', textTransform: 'uppercase', letterSpacing: -0.5 }}>EMBER OPS</Text>
+              <Text style={{ fontSize: 9, color: colors.mutedText, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' }}>CAFETERIA-GO ADMIN</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Bell with Badge & Notification Toggle */}
+        <Pressable
+          onPress={() => setNotifOpen(!notifOpen)}
+          style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: notifOpen ? 'rgba(255,102,0,0.2)' : colors.inputBg, alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+        >
+          <Bell color={notifOpen ? '#FF6600' : colors.text} size={20} />
+          {displayNotifications.length > 0 && (
+            <View style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF6600' }} />
+          )}
+        </Pressable>
+      </View>
+
+      {/* Notifications Popover Overlay */}
+      {notifOpen && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 96,
+            right: 16,
+            width: 300,
+            backgroundColor: colors.surface,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: 'rgba(255,102,0,0.3)',
+            zIndex: 50,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.3,
+            shadowRadius: 20,
+            elevation: 10,
+            overflow: 'hidden',
+          }}
+        >
+          <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: '#FF6600', fontSize: 11, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>Live Alerts</Text>
+            <Text style={{ color: colors.mutedText, fontSize: 9, fontWeight: '800' }}>{displayNotifications.length} NEW</Text>
+          </View>
+
+          <ScrollView style={{ maxHeight: 220 }}>
+            {displayNotifications.map((n) => (
+              <View key={n.id} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', gap: 10 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF6600', marginTop: 4 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.text }}>{n.title}</Text>
+                  <Text style={{ fontSize: 10, color: colors.subtext, marginTop: 2 }}>{n.desc}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          <Pressable
+            onPress={() => showSuccessToast('Notifications cleared')}
+            style={{ padding: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}
+          >
+            <Text style={{ color: colors.mutedText, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' }}>Clear All</Text>
+          </Pressable>
+        </View>
+      )}
+
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 20 }}>
+        {/* Title */}
+        <View>
+          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.text, textTransform: 'uppercase', letterSpacing: -0.5 }}>Pickup Verification</Text>
+          <Text style={{ fontSize: 12, color: colors.subtext, marginTop: 4 }}>Input code to authorize order release</Text>
+        </View>
+
+        {/* Code Input Card */}
+        <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(255,102,0,0.3)', gap: 12 }}>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: '#FF6600', letterSpacing: 1.5, textTransform: 'uppercase' }}>ENTER RECEIVING CODE</Text>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 8, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14 }}>
+              <QrCode color="#FF6600" size={20} style={{ marginRight: 10 }} />
+              <TextInput
+                value={code}
+                onChangeText={setCode}
+                placeholder="e.g. A7B4"
+                placeholderTextColor={colors.mutedText}
+                autoCapitalize="characters"
+                style={{ flex: 1, color: '#FF6600', fontSize: 20, fontWeight: '900', letterSpacing: 4, height: 48 }}
+              />
+            </View>
+            <Pressable
+              onPress={findMatchingOrder}
+              style={{ backgroundColor: '#FF6600', borderRadius: 8, paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center' }}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>Verify</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Active Matches Section */}
+        <View style={{ gap: 12 }}>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase' }}>ACTIVE MATCHES</Text>
+
+          <View style={{ backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: pickedUp ? 'rgba(16,185,129,0.4)' : (matchedOrder ? colors.border : colors.border), overflow: 'hidden', opacity: matchedOrder ? 1 : 0.6 }}>
+            {/* Header */}
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View>
+                <Text style={{ fontSize: 22, fontWeight: '900', color: '#FF6600', letterSpacing: 2 }}>
+                  {matchedOrder ? `${matchedOrder.pickup_code || code} - ${matchedOrder.student_name || 'Student Customer'}` : (code || 'CODE') + ' - No Match'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <ShieldCheck color={matchedOrder ? '#10B981' : colors.mutedText} size={14} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: matchedOrder ? '#10B981' : colors.mutedText }}>
+                    {matchedOrder ? 'Verified Customer' : 'Enter a valid pickup code'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Content */}
+            <View style={{ padding: 16, gap: 12 }}>
+              <View style={{ backgroundColor: colors.background, borderRadius: 8, padding: 12, gap: 6, borderWidth: 1, borderColor: colors.border }}>
+                {matchedOrder ? (
+                  <>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>
+                      Order #{matchedOrder.id.slice(0, 6).toUpperCase()} · Total रू {matchedOrder.total_amount}
+                    </Text>
+                    {matchedItems.length > 0 ? matchedItems.map((it: any, idx: number) => (
+                      <Text key={idx} style={{ fontSize: 11, color: colors.subtext }}>
+                        • {it.quantity}x {it?.products?.name || 'Menu Item'} - रू {(it.unit_price * it.quantity).toFixed(0)}
+                      </Text>
+                    )) : (
+                      <Text style={{ fontSize: 11, color: colors.subtext }}>• Order items total: रू {matchedOrder.total_amount}</Text>
+                    )}
+                    {matchedOrder.pickup_time && (
+                      <Text style={{ fontSize: 11, color: colors.mutedText, marginTop: 4 }}>
+                        Slot: {matchedOrder.pickup_time}
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>Awaiting code verification...</Text>
+                    <Text style={{ fontSize: 11, color: colors.subtext }}>• Enter the 4-character pickup code provided to the student</Text>
+                  </>
+                )}
+              </View>
+
+              {matchedOrder && !pickedUp ? (
+                <View style={{ gap: 8, marginTop: 4 }}>
+                  <Pressable
+                    onPress={handleMarkPickedUp}
+                    style={{ backgroundColor: '#FF6600', paddingVertical: 14, borderRadius: 8, alignItems: 'center' }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Mark as Picked Up</Text>
+                  </Pressable>
+                  <Text style={{ fontSize: 10, color: colors.mutedText, textAlign: 'center', lineHeight: 14 }}>
+                    Marking as picked up will notify the customer and archive these orders from the live queue.
+                  </Text>
+                </View>
+              ) : pickedUp ? (
+                <View style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', borderRadius: 8, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <CheckCircle2 color="#10B981" size={20} />
+                  <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>Order Released & Picked Up</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}

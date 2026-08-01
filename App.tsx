@@ -1,20 +1,13 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useColorScheme, View } from "react-native";
 
 export default function App() {
+  const colorScheme = useColorScheme();
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
