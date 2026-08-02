@@ -91,7 +91,7 @@ export default function StudentOrdersScreen() {
   });
 
   const displayOrders = useMemo(() => {
-    if (orders && orders.length > 0) {
+    if (user?.id) {
       return orders
         .filter((o) => {
           if (activeTab === 'today') {
@@ -124,7 +124,7 @@ export default function StudentOrdersScreen() {
     return MOCK_STUDENT_ORDERS.filter((o) =>
       activeTab === 'today' ? o.status === 'READY' : o.status === 'COMPLETED',
     );
-  }, [orders, allItemsMap, activeTab]);
+  }, [orders, allItemsMap, activeTab, user?.id]);
 
   if (isLoading && !user?.id) {
     return <LoadingScreen message="Loading orders..." />;

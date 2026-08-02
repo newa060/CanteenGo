@@ -22,6 +22,7 @@ import { useCreateProduct, useDeleteProduct, useProducts, useToggleProductAvaila
 import { cloudinaryService, optimizeImageUrl } from '../../lib/cloudinary';
 import { showSuccessToast, showErrorToast } from '../../lib/errorHandler';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
+import { supabase } from '../../lib/supabase';
 
 const FALLBACK_CATEGORIES = ['Momo', 'Chowmein', 'Burger', 'More'];
 
@@ -72,15 +73,148 @@ const FALLBACK_ITEMS = [
   },
 ];
 
-function AddItemModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+type DisplayItem = {
+  id: string;
+  name: string;
+  category: string;
+  category_id: string;
+  price: string;
+  priceNum: number;
+  available: boolean;
+  desc: string;
+  image: string;
+};
+
+function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClose: () => void; editItem?: DisplayItem | null }) {
+  const isEdit = !!editItem;
   const { isDarkMode } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
+  const user = useAuthStore((s) => s.user);
+  const createProduct = useCreateProduct();
+  const updateProduct = useUpdateProduct();
+  const { data: dbCategories } = useCategories();
 
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [price, setPrice] = useState('');
-  const [category, setCategory] = useState('');
-  const [available, setAvailable] = useState(true);
+  const [name, setName] = useState(editItem?.name || '');
+  const [desc, setDesc] = useState(editItem?.desc || '');
+  const [price, setPrice] = useState(editItem ? String(editItem.priceNum) : '');
+  const [category, setCategory] = useState<string>(editItem?.category_id || '');
+  const [imageUri, setImageUri] = useState<string | null>(editItem?.image || null);
+  const [available, setAvailable] = useState(editItem ? editItem.available : true);
+  const [submitting, setSubmitting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+
+  // Re-populate form when editItem changes (e.g. opening edit for a different item)
+  React.useEffect(() => {
+    if (visible) {
+      setName(editItem?.name || '');
+      setDesc(editItem?.desc || '');
+      setPrice(editItem ? String(editItem.priceNum) : '');
+      setCategory(editItem?.category_id || '');
+      setImageUri(editItem?.image || null);
+      setAvailable(editItem ? editItem.available : true);
+    }
+  }, [visible, editItem?.id]);
+
+  const handlePickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        showErrorToast('Permission to access media library is required');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const localUri = result.assets[0].uri;
+        setImageUri(localUri);
+      }
+    } catch (e) {
+      showErrorToast('Error picking image');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name.trim() || !price.trim()) {
+      showErrorToast('Please fill in product name and price');
+      return;
+    }
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      showErrorToast('Please enter a valid price');
+      return;
+    }
+
+    setSubmitting(true);
+    let finalImageUrl = editItem?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
+
+    try {
+      // Upload image if a new one was picked (not an http URL)
+      if (imageUri && !imageUri.startsWith('http')) {
+        setUploadingImage(true);
+        try {
+          const uploadRes = await cloudinaryService.uploadImage(imageUri, { folder: 'products' });
+          if (uploadRes?.secure_url) {
+            finalImageUrl = uploadRes.secure_url;
+          }
+        } catch {
+          finalImageUrl = imageUri;
+        } finally {
+          setUploadingImage(false);
+        }
+      } else if (imageUri) {
+        finalImageUrl = imageUri;
+      }
+
+      if (isEdit && editItem) {
+        // ——— EDIT MODE ———
+        await updateProduct.mutateAsync({
+          id: editItem.id,
+          updates: {
+            category_id: category || undefined,
+            name: name.trim(),
+            description: desc.trim() || undefined,
+            price: priceNum,
+            is_available: available,
+            image_url: finalImageUrl,
+          } as any,
+        });
+        showSuccessToast('Item updated successfully!');
+      } else {
+        // ——— CREATE MODE ———
+        let canteenIdToUse = user?.canteen_id;
+        if (!canteenIdToUse) {
+          const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
+          if (canteens && canteens.length > 0) {
+            canteenIdToUse = canteens[0].id;
+          }
+        }
+        await createProduct.mutateAsync({
+          canteen_id: canteenIdToUse || undefined,
+          category_id: category || undefined,
+          name: name.trim(),
+          description: desc.trim() || undefined,
+          price: priceNum,
+          is_available: available,
+          image_url: finalImageUrl,
+        });
+        showSuccessToast('Item added successfully!');
+      }
+
+      onClose();
+    } catch (e: any) {
+      showErrorToast(e?.message || (isEdit ? 'Failed to update item' : 'Failed to create item'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedCategoryObj = dbCategories?.find((c) => c.id === category);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -109,7 +243,7 @@ function AddItemModal({ visible, onClose }: { visible: boolean; onClose: () => v
               borderBottomColor: colors.border,
             }}
           >
-            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>Add New Item</Text>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>{isEdit ? 'Edit Item' : 'Add New Item'}</Text>
             <Pressable
               onPress={onClose}
               style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
@@ -122,25 +256,32 @@ function AddItemModal({ visible, onClose }: { visible: boolean; onClose: () => v
           <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 20, gap: 20 }}>
             {/* Image Uploader */}
             <Pressable
+              onPress={handlePickImage}
               style={{
                 borderWidth: 2,
-                borderColor: colors.border,
-                borderStyle: 'dashed',
+                borderColor: imageUri ? '#FF6600' : colors.border,
+                borderStyle: imageUri ? 'solid' : 'dashed',
                 borderRadius: 14,
-                padding: 28,
+                height: 140,
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: colors.background,
-                gap: 8,
+                overflow: 'hidden',
               }}
             >
-              <Camera color="#FF6600" size={32} />
-              <Text style={{ fontSize: 11, fontWeight: '800', color: '#FF6600', letterSpacing: 2, textTransform: 'uppercase' }}>
-                Upload Item Photo
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.subtext, textAlign: 'center' }}>
-                Drag and drop or click to browse
-              </Text>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              ) : (
+                <View style={{ alignItems: 'center', gap: 8 }}>
+                  <Camera color="#FF6600" size={32} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#FF6600', letterSpacing: 2, textTransform: 'uppercase' }}>
+                    Upload Item Photo
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.subtext, textAlign: 'center' }}>
+                    Tap to select an image from gallery
+                  </Text>
+                </View>
+              )}
             </Pressable>
 
             {/* Form Fields */}
@@ -180,12 +321,33 @@ function AddItemModal({ visible, onClose }: { visible: boolean; onClose: () => v
                 <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
                   CATEGORY
                 </Text>
-                <View style={{ flexDirection: 'row', borderBottomWidth: 2, borderBottomColor: colors.border, paddingVertical: 10, alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 16, color: category ? colors.text : colors.mutedText }}>
-                    {category || 'Select category'}
+                <Pressable
+                  onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+                  style={{ flexDirection: 'row', borderBottomWidth: 2, borderBottomColor: colors.border, paddingVertical: 10, alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <Text style={{ fontSize: 16, color: selectedCategoryObj ? colors.text : colors.mutedText }}>
+                    {selectedCategoryObj ? selectedCategoryObj.name : 'Select category (Optional)'}
                   </Text>
                   <ChevronDown color={colors.subtext} size={18} />
-                </View>
+                </Pressable>
+                {showCategoryPicker && (
+                  <View style={{ backgroundColor: colors.background, borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: colors.border, paddingVertical: 4 }}>
+                    {(dbCategories || []).map((catObj) => (
+                      <Pressable
+                        key={catObj.id}
+                        onPress={() => {
+                          setCategory(catObj.id);
+                          setShowCategoryPicker(false);
+                        }}
+                        style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: category === catObj.id ? `${colors.primary}20` : 'transparent' }}
+                      >
+                        <Text style={{ color: category === catObj.id ? '#FF6600' : colors.text, fontWeight: category === catObj.id ? '700' : '400' }}>
+                          {catObj.name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Price */}
@@ -229,10 +391,13 @@ function AddItemModal({ visible, onClose }: { visible: boolean; onClose: () => v
               <Text style={{ color: colors.text, fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>CANCEL</Text>
             </Pressable>
             <Pressable
-              onPress={onClose}
-              style={{ flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#FF6600', alignItems: 'center', shadowColor: '#FF6600', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 }}
+              onPress={handleSave}
+              disabled={submitting}
+              style={{ flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#FF6600', alignItems: 'center', shadowColor: '#FF6600', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6, opacity: submitting ? 0.6 : 1 }}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>SAVE ITEM</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>
+                {submitting ? (uploadingImage ? 'UPLOADING...' : 'SAVING...') : 'SAVE ITEM'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -246,19 +411,57 @@ export default function MenuManagementScreen() {
   const { isDarkMode } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
 
-  const [items, setItems] = useState<typeof FALLBACK_ITEMS>(FALLBACK_ITEMS);
-  const [activeCat, setActiveCat] = useState<string>('Momo');
+  const { data: dbProducts, isLoading: loadingProducts } = useProducts();
+  const { data: dbCategories } = useCategories();
+  const toggleAvailability = useToggleProductAvailability();
+  const deleteProduct = useDeleteProduct();
+
+  const [activeCat, setActiveCat] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editItem, setEditItem] = useState<DisplayItem | null>(null);
   const [search, setSearch] = useState('');
 
-  const toggleAvail = (id: string) =>
-    setItems((prev: typeof FALLBACK_ITEMS) => prev.map((i) => (i.id === id ? { ...i, available: !i.available } : i)));
+  const displayProducts = useMemo(() => {
+    const products = (dbProducts || []) as any[];
+    return products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category_id || 'MOMO',
+      category_id: p.category_id,
+      price: `RS ${p.price}`,
+      priceNum: p.price,
+      available: p.is_available,
+      desc: p.description,
+      image: optimizeImageUrl(p.image_url, { width: 600, quality: 80 }),
+    }));
+  }, [dbProducts]);
 
-  const CATEGORIES = FALLBACK_CATEGORIES;
+  const CATEGORIES = useMemo(() => {
+    if (dbCategories && dbCategories.length > 0) {
+      return [{ id: 'all', name: 'All' }, ...dbCategories.map((c) => ({ id: c.id, name: c.name }))];
+    }
+    return [{ id: 'all', name: 'All' }, ...FALLBACK_CATEGORIES.map((c) => ({ id: c.toLowerCase(), name: c }))];
+  }, [dbCategories]);
+
+  const filteredItems = displayProducts.filter((item) => {
+    const matchesCat = activeCat === 'all' || item.category_id === activeCat || item.category === activeCat;
+    const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
+    return matchesCat && matchesSearch;
+  });
+
+  const toggleAvail = (id: string, currentVal: boolean) => {
+    if (dbProducts && dbProducts.some((p) => p.id === id)) {
+      toggleAvailability.mutate({ id, isAvailable: !currentVal });
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <AddItemModal visible={showAddModal} onClose={() => setShowAddModal(false)} />
+      <ProductModal
+        visible={showAddModal || editItem !== null}
+        onClose={() => { setShowAddModal(false); setEditItem(null); }}
+        editItem={editItem}
+      />
 
       {/* Fixed Header */}
       <View
@@ -317,12 +520,12 @@ export default function MenuManagementScreen() {
 
         {/* Categories Pills */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
-          {CATEGORIES.map((cat) => {
-            const isActive = activeCat === cat;
+          {CATEGORIES.map((catObj) => {
+            const isActive = activeCat === catObj.id;
             return (
               <Pressable
-                key={cat}
-                onPress={() => setActiveCat(cat)}
+                key={catObj.id}
+                onPress={() => setActiveCat(catObj.id)}
                 style={{
                   paddingHorizontal: 20,
                   paddingVertical: 8,
@@ -336,9 +539,8 @@ export default function MenuManagementScreen() {
                 }}
               >
                 <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', color: isActive ? '#FFFFFF' : colors.subtext }}>
-                  {cat}
+                  {catObj.name}
                 </Text>
-                {cat === 'More' && <ChevronDown color={colors.subtext} size={14} />}
               </Pressable>
             );
           })}
@@ -346,7 +548,7 @@ export default function MenuManagementScreen() {
 
         {/* Food Items */}
         <View style={{ paddingHorizontal: 20, gap: 16 }}>
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <View
               key={item.id}
               style={{
@@ -375,10 +577,20 @@ export default function MenuManagementScreen() {
 
                 {/* Edit / Delete Floating Buttons */}
                 <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 8, zIndex: 2 }}>
-                  <Pressable style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Pressable
+                    onPress={() => setEditItem(item)}
+                    style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}
+                  >
                     <Edit2 color="#FFFFFF" size={15} />
                   </Pressable>
-                  <Pressable style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Pressable
+                    onPress={() => {
+                      if (dbProducts && dbProducts.some((p) => p.id === item.id)) {
+                        deleteProduct.mutate(item.id);
+                      }
+                    }}
+                    style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}
+                  >
                     <Trash2 color="#EF4444" size={15} />
                   </Pressable>
                 </View>
@@ -406,7 +618,7 @@ export default function MenuManagementScreen() {
                   <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', color: item.available ? '#FF6600' : colors.mutedText }}>
                     {item.available ? 'AVAILABLE' : 'UNAVAILABLE'}
                   </Text>
-                  <Switch value={item.available} onValueChange={() => toggleAvail(item.id)} trackColor={{ false: '#353534', true: '#FF6600' }} thumbColor="#FFFFFF" />
+                  <Switch value={item.available} onValueChange={() => toggleAvail(item.id, item.available)} trackColor={{ false: '#353534', true: '#FF6600' }} thumbColor="#FFFFFF" />
                 </View>
               </View>
             </View>

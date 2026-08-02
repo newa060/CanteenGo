@@ -62,11 +62,11 @@ export default function NotificationsScreen() {
   const markAllAsRead = useMarkAllNotificationsAsRead();
 
   const displayNotifications = useMemo(() => {
-    if (notifications && notifications.length > 0) {
-      return [...notifications].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (user?.id) {
+      return [...(notifications || [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
     return MOCK_NOTIFICATIONS;
-  }, [notifications]);
+  }, [notifications, user?.id]);
 
   const unreadCount = useMemo(() => displayNotifications.filter((n) => !n.is_read).length, [displayNotifications]);
 

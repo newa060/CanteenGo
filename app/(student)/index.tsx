@@ -154,9 +154,7 @@ export default function StudentMenuScreen() {
   }, [apiCategories, loadingCats]);
 
   const displayProducts = useMemo(() => {
-    const products = (apiProducts && apiProducts.length > 0
-      ? (apiProducts as any[])
-      : FALLBACK_FOOD_ITEMS) as any[];
+    const products = (apiProducts || []) as any[];
     return products.map((p) => ({
       ...p,
       category: p.category_id,

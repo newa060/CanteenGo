@@ -62,10 +62,18 @@ export const getThumbnailUrl = (url: string, size: number = 200): string => {
 
 export const cloudinaryService = {
   async uploadImage(imageUri: string, options: CloudinaryUploadOptions = {}): Promise<CloudinaryUploadResult> {
+    if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'your-cloudinary-cloud-name') {
+      return {
+        secure_url: imageUri,
+        public_id: `local_${Date.now()}`,
+      };
+    }
     const baseUrl = getBaseUrl();
     if (!baseUrl) {
-      handleError(new Error('Cloudinary cloud name not configured'));
-      throw new Error('Cloudinary not configured');
+      return {
+        secure_url: imageUri,
+        public_id: `local_${Date.now()}`,
+      };
     }
 
     const formData = new FormData();
@@ -101,7 +109,10 @@ export const cloudinaryService = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `Upload failed with status ${response.status}`);
+        const errMsg = errorData.error?.message || `Cloudinary upload failed (HTTP ${response.status})`;
+        console.error('Cloudinary upload error response:', errorData);
+        showErrorToast(errMsg);
+        throw new Error(errMsg);
       }
 
       const data = await response.json();
@@ -113,8 +124,9 @@ export const cloudinaryService = {
         format: data.format,
         bytes: data.bytes,
       };
-    } catch (error) {
-      handleError(error);
+    } catch (error: any) {
+      console.error('Cloudinary upload exception:', error);
+      showErrorToast(error?.message || 'Failed to upload image to Cloudinary');
       throw error;
     }
   },
