@@ -39,18 +39,22 @@ export const notificationRepository = {
     }
   },
 
-  async create(notification: InsertTables<'notifications'>): Promise<Tables<'notifications'>> {
+  async create(notification: InsertTables<'notifications'>): Promise<Tables<'notifications'> | null> {
     try {
       const { data, error } = await supabase
         .from('notifications')
         .insert(notification as any)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        // If RLS policy prevents inserting notification for another user, catch silently
+        console.log('[Notification DB Warning]:', error.message);
+        return null;
+      }
       return data as Tables<'notifications'>;
     } catch (error) {
-      handleError(error);
-      throw error;
+      console.log('[Notification DB Warning]:', error);
+      return null;
     }
   },
 

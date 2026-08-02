@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
+import { FlatList, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, ClipboardList, Clock } from 'lucide-react-native';
+import { Calendar, ClipboardList, Clock, QrCode as QrCodeIcon, X } from 'lucide-react-native';
+import QRCodeSVG from 'react-native-qrcode-svg';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useStudentOrders } from '../../lib/hooks/useOrders';
@@ -67,6 +68,7 @@ export default function StudentOrdersScreen() {
   const colors = getThemeColors(isDarkMode);
   const user = useAuthStore((s) => s.user);
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today');
+  const [selectedQrOrder, setSelectedQrOrder] = useState<any | null>(null);
 
   const { data: rawOrders, isLoading } = useStudentOrders(user?.id);
   const orders = rawOrders || [];
@@ -114,7 +116,7 @@ export default function StudentOrdersScreen() {
             rawId: o.id,
             date: formatOrderDate(o.created_at),
             status: (o.status || 'pending').toUpperCase(),
-            pickupCode: o.pickup_code || '',
+            pickupCode: o.pickup_code || o.id.slice(0, 6).toUpperCase(),
             canteen: 'Main Hub Canteen',
             items: displayItems,
             total: o.total_amount,
@@ -196,17 +198,37 @@ export default function StudentOrdersScreen() {
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{item.id}</Text>
-              <View
-                style={{
-                  backgroundColor: item.status === 'READY' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: 6,
-                }}
-              >
-                <Text style={{ color: item.status === 'READY' ? '#10B981' : colors.mutedText, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
-                  {item.status}
-                </Text>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {/* QR Code Icon Trigger */}
+                <Pressable
+                  onPress={() => setSelectedQrOrder(item)}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(255,102,0,0.12)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,102,0,0.3)',
+                  }}
+                >
+                  <QrCodeIcon color="#FF6600" size={18} />
+                </Pressable>
+
+                <View
+                  style={{
+                    backgroundColor: item.status === 'READY' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ color: item.status === 'READY' ? '#10B981' : colors.mutedText, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
+                    {item.status}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -239,6 +261,52 @@ export default function StudentOrdersScreen() {
           </View>
         )}
       />
+
+      {/* Student Order QR Code Modal */}
+      {selectedQrOrder && (
+        <Modal transparent animationType="fade" visible={!!selectedQrOrder} onRequestClose={() => setSelectedQrOrder(null)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ width: '100%', maxWidth: 320, backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: '#FF6600', padding: 20, alignItems: 'center', gap: 16 }}>
+              {/* Header */}
+              <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: '#FF6600', letterSpacing: 1 }}>ORDER QR CODE</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '700' }}>SHOW AT CANTEEN COUNTER</Text>
+                </View>
+                <Pressable onPress={() => setSelectedQrOrder(null)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}>
+                  <X color={colors.text} size={18} />
+                </Pressable>
+              </View>
+
+              {/* QR Code Container */}
+              <View style={{ backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center', elevation: 4 }}>
+                <QRCodeSVG
+                  value={selectedQrOrder.pickupCode || selectedQrOrder.rawId}
+                  size={180}
+                  color="#000000"
+                  backgroundColor="#FFFFFF"
+                />
+              </View>
+
+              {/* Details */}
+              <View style={{ alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 11, color: colors.mutedText, fontWeight: '700', letterSpacing: 1 }}>PICKUP CODE</Text>
+                <Text style={{ fontSize: 28, fontWeight: '900', color: '#FF6600', letterSpacing: 4 }}>{selectedQrOrder.pickupCode}</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>{selectedQrOrder.id}</Text>
+              </View>
+
+              {/* Close Button */}
+              <Pressable
+                onPress={() => setSelectedQrOrder(null)}
+                style={{ width: '100%', backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: colors.text, fontSize: 12, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
+

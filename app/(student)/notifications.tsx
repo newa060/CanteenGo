@@ -6,15 +6,9 @@ import { Colors } from '../../constants/colors';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useMarkAllNotificationsAsRead, useNotifications } from '../../lib/hooks/useNotifications';
+import { useStudentOrders } from '../../lib/hooks/useOrders';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { showSuccessToast } from '../../lib/errorHandler';
-
-const MOCK_NOTIFICATIONS = [
-  { id: '1', title: 'Order Ready!', message: 'Your order #ORD-8921 is now ready for pickup at Counter 1.', type: 'order', is_read: false, created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() },
-  { id: '2', title: 'Order Confirmed', message: 'Your order #ORD-8851 has been confirmed and is being prepared.', type: 'order', is_read: true, created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: '3', title: 'Daily Special', message: '20% off on all momo items today only!', type: 'promo', is_read: false, created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() },
-  { id: '4', title: 'System Update', message: 'CanteenGo has been updated with new features.', type: 'system', is_read: true, created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-];
 
 const formatTime = (iso: string): string => {
   try {
@@ -58,15 +52,74 @@ export default function NotificationsScreen() {
   const colors = getThemeColors(isDarkMode);
   const user = useAuthStore((s) => s.user);
 
-  const { data: notifications, isLoading } = useNotifications(user?.id, true);
+  const { data: dbNotifications, isLoading } = useNotifications(user?.id, true);
+  const { data: studentOrders } = useStudentOrders(user?.id);
   const markAllAsRead = useMarkAllNotificationsAsRead();
 
   const displayNotifications = useMemo(() => {
-    if (user?.id) {
-      return [...(notifications || [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const list: Array<{ id: string; title: string; message: string; type: string; is_read: boolean; created_at: string }> = [];
+
+    // 1. Direct DB Notifications for user
+    if (dbNotifications && dbNotifications.length > 0) {
+      dbNotifications.forEach((n) => {
+        list.push({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          type: n.type || 'order',
+          is_read: n.is_read,
+          created_at: n.created_at,
+        });
+      });
     }
-    return MOCK_NOTIFICATIONS;
-  }, [notifications, user?.id]);
+
+    // 2. Synthesize dynamic notifications from student's real database orders
+    if (studentOrders && studentOrders.length > 0) {
+      studentOrders.forEach((o) => {
+        const orderShortId = `#CQ-${o.id.slice(0, 4).toUpperCase()}`;
+        if (o.status === 'ready') {
+          list.push({
+            id: `ord-ready-${o.id}`,
+            title: 'Order Ready for Pickup!',
+            message: `Your order ${orderShortId} is READY! Pickup code: ${o.pickup_code || ''}`,
+            type: 'order',
+            is_read: false,
+            created_at: o.updated_at || o.created_at,
+          });
+        } else if (o.status === 'preparing') {
+          list.push({
+            id: `ord-prep-${o.id}`,
+            title: 'Order Preparing',
+            message: `Your order ${orderShortId} is being prepared in the kitchen.`,
+            type: 'order',
+            is_read: false,
+            created_at: o.updated_at || o.created_at,
+          });
+        } else if (o.status === 'pending') {
+          list.push({
+            id: `ord-pend-${o.id}`,
+            title: 'Order Placed',
+            message: `Your order ${orderShortId} (रू ${o.total_amount}) has been received.`,
+            type: 'order',
+            is_read: true,
+            created_at: o.created_at,
+          });
+        } else if (o.status === 'completed') {
+          list.push({
+            id: `ord-comp-${o.id}`,
+            title: 'Order Completed',
+            message: `Your order ${orderShortId} was picked up and completed. Thank you!`,
+            type: 'order',
+            is_read: true,
+            created_at: o.updated_at || o.created_at,
+          });
+        }
+      });
+    }
+
+    // Sort descending by timestamp
+    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [dbNotifications, studentOrders]);
 
   const unreadCount = useMemo(() => displayNotifications.filter((n) => !n.is_read).length, [displayNotifications]);
 

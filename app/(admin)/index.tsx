@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CheckCircle2, ChefHat, Filter, Menu as MenuIcon, QrCode, Search, ShieldCheck, X, XCircle } from 'lucide-react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import { Bell, CheckCircle2, ChefHat, Menu as MenuIcon, Search, ShieldCheck, X } from 'lucide-react-native';
 import AdminDrawer from '../../components/AdminDrawer';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCanteenOrders, useUpdateOrder, useUpdateOrderStatus, ORDERS_QUERY_KEY } from '../../lib/hooks/useOrders';
 import { orderRepository } from '../../lib/repositories/orderRepository';
 import { useNotifications } from '../../lib/hooks/useNotifications';
+import { useCanteen } from '../../lib/hooks/useCanteen';
 import { OrderStatus } from '../../types';
 import { showSuccessToast, showInfoToast } from '../../lib/errorHandler';
 import { optimizeImageUrl } from '../../lib/cloudinary';
@@ -91,6 +92,7 @@ export default function IndividualOrdersScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [canteenId]);
 
+  const { data: canteen } = useCanteen(canteenId);
   const { data: rawOrders, isLoading } = useCanteenOrders(canteenId);
   const orders = rawOrders || [];
 
@@ -103,11 +105,9 @@ export default function IndividualOrdersScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<AdminOrderItem | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'PENDING' | 'PREPARING' | 'READY'>('ALL');
-  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const displayOrders: AdminOrderItem[] = useMemo(() => {
+  const allDisplayOrders: AdminOrderItem[] = useMemo(() => {
     if (orders && orders.length > 0) {
       return orders
         .filter((o: any) => o.status !== 'completed' && o.status !== 'cancelled')
@@ -138,32 +138,47 @@ export default function IndividualOrdersScreen() {
     return [];
   }, [orders]);
 
-  const displayNotifications = useMemo(() => {
-    return (unreadNotifs || []).map((n) => ({
-      id: n.id,
-      title: n.title.toUpperCase(),
-      desc: n.message,
-      time: formatNotifTime(n.created_at),
-    }));
-  }, [unreadNotifs]);
+  // Only PENDING / CONFIRMED orders for individual section
+  const pendingOrders = useMemo(() =>
+    allDisplayOrders.filter(o => o.status === 'PENDING' || o.status === 'CONFIRMED'),
+    [allDisplayOrders]
+  );
 
-  const handleStatusChange = (rawId: string, newStatus: OrderStatus) => {
-    updateStatus.mutate({ orderId: rawId, status: newStatus });
+  const displayNotifications = useMemo(() => {
+    if (unreadNotifs && unreadNotifs.length > 0) {
+      return unreadNotifs.map((n) => ({
+        id: n.id,
+        title: n.title.toUpperCase(),
+        desc: n.message,
+        time: formatNotifTime(n.created_at),
+      }));
+    }
+    // Fallback: derive live alerts from active pending/preparing orders
+    if (orders && orders.length > 0) {
+      return orders.slice(0, 10).map((o: any) => ({
+        id: o.id,
+        title: `ORDER ${o.status?.toUpperCase() || 'PENDING'}`,
+        desc: `${o.student_name || 'Student'} placed order for रू ${o.total_amount || 0}`,
+        time: formatNotifTime(o.created_at),
+      }));
+    }
+    return [
+      { id: '1', title: 'SYSTEM READY', desc: 'Canteen management operational.', time: 'Just now' }
+    ];
+  }, [unreadNotifs, orders]);
+
+  const handleAccept = (rawId: string) => {
+    updateStatus.mutate({ orderId: rawId, status: 'preparing' });
   };
 
   const handleReject = (rawId: string) => {
     updateStatus.mutate({ orderId: rawId, status: 'cancelled' });
   };
 
-  const filteredOrders = displayOrders.filter((o) => {
-    const matchesFilter = activeFilter === 'ALL'
-      ? (o.status === 'PENDING' || o.status === 'PREPARING' || o.status === 'READY' || o.status === 'CONFIRMED')
-      : o.status === activeFilter;
-    const matchesSearch =
-      o.customer.toLowerCase().includes(search.toLowerCase()) ||
-      o.id.toLowerCase().includes(search.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const filteredPending = pendingOrders.filter((o) =>
+    o.customer.toLowerCase().includes(search.toLowerCase()) ||
+    o.id.toLowerCase().includes(search.toLowerCase())
+  );
 
   if (isLoading && !orders.length) {
     return <LoadingScreen message="Loading orders..." />;
@@ -200,13 +215,15 @@ export default function IndividualOrdersScreen() {
               <ChefHat color="#FFFFFF" size={18} />
             </View>
             <View>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#FF6600', textTransform: 'uppercase', letterSpacing: -0.5 }}>EMBER OPS</Text>
-              <Text style={{ fontSize: 9, color: colors.mutedText, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' }}>CAFETERIA-GO ADMIN</Text>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#FF6600', textTransform: 'uppercase', letterSpacing: -0.5 }}>
+                {canteen?.name || 'CANTEEN'}
+              </Text>
+              <Text style={{ fontSize: 9, color: colors.mutedText, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' }}>CANTEEN-GO ADMIN</Text>
             </View>
           </View>
         </View>
 
-        {/* Bell with Badge & Notification Toggle */}
+        {/* Bell */}
         <Pressable
           onPress={() => setNotifOpen(!notifOpen)}
           style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: notifOpen ? 'rgba(255,102,0,0.2)' : isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
@@ -218,7 +235,7 @@ export default function IndividualOrdersScreen() {
         </Pressable>
       </View>
 
-      {/* Notifications Popover Overlay */}
+      {/* Notifications Popover */}
       {notifOpen && (
         <View
           style={{
@@ -243,7 +260,6 @@ export default function IndividualOrdersScreen() {
             <Text style={{ color: '#FF6600', fontSize: 11, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>Live Alerts</Text>
             <Text style={{ color: colors.mutedText, fontSize: 9, fontWeight: '800' }}>{displayNotifications.length} NEW</Text>
           </View>
-
           <ScrollView style={{ maxHeight: 220 }}>
             {displayNotifications.map((n) => (
               <View key={n.id} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', gap: 10 }}>
@@ -255,19 +271,17 @@ export default function IndividualOrdersScreen() {
               </View>
             ))}
           </ScrollView>
-
           <Pressable
-            onPress={() => showSuccessToast('Notifications cleared')}
+            onPress={() => setNotifOpen(false)}
             style={{ padding: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}
           >
-            <Text style={{ color: colors.mutedText, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' }}>Clear All</Text>
+            <Text style={{ color: colors.mutedText, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' }}>Close</Text>
           </Pressable>
         </View>
       )}
 
       {/* Main Content */}
       <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
-        {/* Search & Filter bar */}
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 4, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, height: 40 }}>
             <Search color={colors.mutedText} size={16} style={{ marginRight: 8 }} />
@@ -279,151 +293,87 @@ export default function IndividualOrdersScreen() {
               style={{ flex: 1, color: colors.text, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}
             />
           </View>
-
-          <Pressable
-            onPress={() => setFilterModalOpen(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: activeFilter !== 'ALL' ? '#FF6600' : colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 12, height: 40 }}
-          >
-            <Filter color={activeFilter !== 'ALL' ? '#FFFFFF' : colors.text} size={14} />
-            <Text style={{ color: activeFilter !== 'ALL' ? '#FFFFFF' : colors.text, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>
-              {activeFilter === 'ALL' ? 'FILTER' : activeFilter}
-            </Text>
-          </Pressable>
         </View>
 
-        {/* Orders List */}
-        <FlatList
-          data={filteredOrders}
-          keyExtractor={(o) => o.id}
-          contentContainerStyle={{ paddingBottom: 100, gap: 16 }}
-          renderItem={({ item }) => (
-            <View
-              style={{
-                backgroundColor: colors.surface,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: colors.border,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Card Header */}
-              <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#FF6600', letterSpacing: 1.5, textTransform: 'uppercase' }}>Customer</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text, textTransform: 'uppercase', marginTop: 2 }}>{item.customer}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>Pickup Slot</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textTransform: 'uppercase', marginTop: 2 }}>{item.slot}</Text>
-                </View>
-              </View>
-
-              {/* Card Body */}
-              <View style={{ padding: 12, gap: 10 }}>
-                {/* Item List */}
-                <View style={{ gap: 4 }}>
-                  {item.items.map((it, i) => (
-                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, color: colors.subtext, fontWeight: '700' }}>{it.name}</Text>
-                      <Text style={{ fontSize: 11, color: colors.text, fontWeight: '700' }}>{it.price}</Text>
-                    </View>
-                  ))}
+        {filteredPending.length === 0 ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, opacity: 0.6 }}>
+            <CheckCircle2 color={colors.mutedText} size={48} />
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.mutedText, textTransform: 'uppercase', letterSpacing: 1 }}>No pending orders</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedText, textAlign: 'center' }}>All orders have been accepted or completed</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredPending}
+            keyExtractor={(o) => o.id}
+            contentContainerStyle={{ paddingBottom: 100, gap: 16 }}
+            renderItem={({ item }) => (
+              <View style={{ backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+                {/* Header */}
+                <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#FF6600', letterSpacing: 1.5, textTransform: 'uppercase' }}>Customer</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text, textTransform: 'uppercase', marginTop: 2 }}>{item.customer}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>Pickup Slot</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textTransform: 'uppercase', marginTop: 2 }}>{item.slot}</Text>
+                  </View>
                 </View>
 
-                {/* Grand Total */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>Grand Total</Text>
-                  <Text style={{ fontSize: 16, fontWeight: '900', color: '#FF6600' }}>{item.total}</Text>
-                </View>
+                {/* Body */}
+                <View style={{ padding: 12, gap: 10 }}>
+                  <View style={{ gap: 4 }}>
+                    {item.items.map((it, i) => (
+                      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 11, color: colors.subtext, fontWeight: '700' }}>{it.name}</Text>
+                        <Text style={{ fontSize: 11, color: colors.text, fontWeight: '700' }}>{it.price}</Text>
+                      </View>
+                    ))}
+                  </View>
 
-                {/* Interactive Action Buttons */}
-                <View style={{ gap: 8, paddingTop: 4 }}>
-                  {/* Verify Receipt Button */}
-                  <Pressable
-                    onPress={() => setSelectedReceipt(item)}
-                    style={{ backgroundColor: isDarkMode ? '#E5E2E1' : '#0B1C30', paddingVertical: 10, borderRadius: 4, alignItems: 'center' }}
-                  >
-                    <Text style={{ color: isDarkMode ? '#18181B' : '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                      Verify Receipt
-                    </Text>
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>Grand Total</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#FF6600' }}>{item.total}</Text>
+                  </View>
 
-                  {/* Accept / Mark Ready / Reject Buttons */}
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {item.status !== 'READY' ? (
+                  <View style={{ gap: 8, paddingTop: 4 }}>
+                    {/* Verify Receipt */}
+                    <Pressable
+                      onPress={() => setSelectedReceipt(item)}
+                      style={{ backgroundColor: isDarkMode ? '#E5E2E1' : '#0B1C30', paddingVertical: 10, borderRadius: 4, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: isDarkMode ? '#18181B' : '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Verify Receipt</Text>
+                    </Pressable>
+
+                    {/* Accept / Reject */}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
                       <Pressable
-                        onPress={() => {
-                          if (item.status === 'PENDING' || item.status === 'CONFIRMED') {
-                            handleStatusChange(item.rawId, 'preparing');
-                          } else if (item.status === 'PREPARING') {
-                            handleStatusChange(item.rawId, 'ready');
-                          }
-                        }}
-                        style={{
-                          flex: 1,
-                          backgroundColor: item.status === 'PREPARING' ? '#10B981' : (item.status === 'READY' ? 'rgba(16,185,129,1)' : 'rgba(16,185,129,0.1)'),
-                          borderWidth: 1,
-                          borderColor: 'rgba(16,185,129,0.3)',
-                          paddingVertical: 10,
-                          borderRadius: 4,
-                          alignItems: 'center',
-                        }}
+                        onPress={() => handleAccept(item.rawId)}
+                        style={{ flex: 1, backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', paddingVertical: 10, borderRadius: 4, alignItems: 'center' }}
                       >
-                        <Text style={{ color: item.status === 'PREPARING' ? '#FFFFFF' : (item.status === 'READY' ? '#FFFFFF' : '#10B981'), fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                          {item.status === 'READY' ? 'Marked Ready' : (item.status === 'PREPARING' ? 'Mark Ready' : 'Accept')}
-                        </Text>
+                        <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Accept</Text>
                       </Pressable>
-                    ) : (
-                      <Pressable
-                        onPress={() => handleStatusChange(item.rawId, 'completed')}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#10B981',
-                          borderWidth: 1,
-                          borderColor: '#10B981',
-                          paddingVertical: 10,
-                          borderRadius: 4,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                          Complete Order
-                        </Text>
-                      </Pressable>
-                    )}
-
-                    {item.status !== 'READY' && item.status !== 'COMPLETED' && (
                       <Pressable
                         onPress={() => handleReject(item.rawId)}
-                        style={{
-                          flex: 1,
-                          backgroundColor: 'rgba(239,68,68,0.1)',
-                          borderWidth: 1,
-                          borderColor: 'rgba(239,68,68,0.3)',
-                          paddingVertical: 10,
-                          borderRadius: 4,
-                          alignItems: 'center',
-                        }}
+                        style={{ flex: 1, backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', paddingVertical: 10, borderRadius: 4, alignItems: 'center' }}
                       >
                         <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Reject</Text>
                       </Pressable>
-                    )}
+                    </View>
                   </View>
                 </View>
               </View>
-            </View>
-          )}
-        />
+            )}
+          />
+        )}
       </View>
 
-      {/* Student Payment Receipt Modal */}
+      {/* Receipt Modal */}
       {selectedReceipt && (
         <Modal transparent animationType="slide" visible={!!selectedReceipt} onRequestClose={() => setSelectedReceipt(null)}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <View style={{ width: '100%', maxWidth: 360, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: '#FF6600', padding: 20, gap: 16, overflow: 'hidden' }}>
-              
-              {/* Receipt Header */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 12 }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+            <View style={{ width: '100%', maxHeight: '90%', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: '#FF6600', padding: 16, gap: 14 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 10 }}>
                 <View>
                   <Text style={{ fontSize: 16, fontWeight: '900', color: '#FF6600', letterSpacing: 1 }}>PAYMENT RECEIPT</Text>
                   <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '700', letterSpacing: 1 }}>STUDENT VERIFICATION</Text>
@@ -433,108 +383,37 @@ export default function IndividualOrdersScreen() {
                 </Pressable>
               </View>
 
-              {/* Graphical Payment Receipt Card */}
-              <View style={{ backgroundColor: colors.background, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', gap: 12 }}>
-                {/* Verified Stamp Banner */}
-                <View style={{ backgroundColor: 'rgba(16,185,129,0.15)', paddingVertical: 6, borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)' }}>
-                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' }}>✓ PAYMENT SUCCESSFUL</Text>
-                </View>
-
-                {/* Amount Paid Big Display */}
-                <View style={{ alignItems: 'center', marginVertical: 4 }}>
-                  <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' }}>Amount Transferred</Text>
-                  <Text style={{ fontSize: 28, fontWeight: '900', color: '#FF6600', marginTop: 2 }}>{selectedReceipt.total}</Text>
-                </View>
-
-                <View style={{ height: 1, backgroundColor: colors.border }} />
-
-                {/* Details Table */}
-                <View style={{ gap: 8 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11, color: colors.mutedText }}>Student:</Text>
-                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: '800' }}>{selectedReceipt.customer}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11, color: colors.mutedText }}>Order ID:</Text>
-                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: '800' }}>{selectedReceipt.id}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11, color: colors.mutedText }}>Payment Mode:</Text>
-                    <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>{selectedReceipt.paymentMethod}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11, color: colors.mutedText }}>Transaction Ref:</Text>
-                    <Text style={{ fontSize: 11, color: '#FF6600', fontWeight: '800' }}>{selectedReceipt.txnId}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11, color: colors.mutedText }}>Date & Time:</Text>
-                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: '700' }}>{selectedReceipt.paidAt}</Text>
-                  </View>
-                </View>
-
-                <View style={{ height: 1, backgroundColor: colors.border }} />
-
-                {/* Items Summary */}
-                <View style={{ gap: 4 }}>
-                  <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '800', letterSpacing: 1.5 }}>ITEMS IN RECEIPT:</Text>
-                  {selectedReceipt.items.map((it, idx) => (
-                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 11, color: colors.text }}>{it.name}</Text>
-                      <Text style={{ fontSize: 11, color: colors.text, fontWeight: '700' }}>{it.price}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Uploaded Receipt Image */}
-              {selectedReceipt.receipt_url && (
-                <View style={{ borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, height: 140 }}>
+              {selectedReceipt.receipt_url ? (
+                <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' }} style={{ maxHeight: 480, width: '100%' }}>
                   <Image
-                    source={{ uri: optimizeImageUrl(selectedReceipt.receipt_url, { width: 600, height: 400, quality: 80 }) || selectedReceipt.receipt_url }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="cover"
+                    source={{ uri: selectedReceipt.receipt_url }}
+                    style={{ width: '100%', height: 460, borderRadius: 8 }}
+                    resizeMode="contain"
                   />
+                </ScrollView>
+              ) : (
+                <View style={{ height: 200, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedText, fontWeight: '600' }}>No payment receipt attached by student</Text>
                 </View>
               )}
 
-              {/* Action Button */}
-              <Pressable
-                onPress={() => {
-                  handleStatusChange(selectedReceipt.rawId, 'preparing');
-                  setSelectedReceipt(null);
-                }}
-                style={{ backgroundColor: '#FF6600', paddingVertical: 14, borderRadius: 10, alignItems: 'center' }}
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Confirm & Start Preparing</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Filter Modal */}
-      {filterModalOpen && (
-        <Modal transparent animationType="fade" visible={filterModalOpen} onRequestClose={() => setFilterModalOpen(false)}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <View style={{ width: '100%', maxWidth: 300, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: '#FF6600', padding: 16, gap: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '900', color: '#FF6600', letterSpacing: 1 }}>FILTER ORDERS</Text>
-              {(['ALL', 'PENDING', 'PREPARING', 'READY'] as const).map((status) => (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
                 <Pressable
-                  key={status}
-                  onPress={() => {
-                    setActiveFilter(status);
-                    setFilterModalOpen(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    backgroundColor: activeFilter === status ? '#FF6600' : colors.background,
-                    borderRadius: 6,
-                  }}
+                  onPress={() => setSelectedReceipt(null)}
+                  style={{ flex: 1, backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', paddingVertical: 14, borderRadius: 10, alignItems: 'center' }}
                 >
-                  <Text style={{ color: activeFilter === status ? '#FFFFFF' : colors.text, fontSize: 12, fontWeight: '800' }}>{status}</Text>
+                  <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Close</Text>
                 </Pressable>
-              ))}
+                <Pressable
+                  onPress={() => {
+                    handleAccept(selectedReceipt.rawId);
+                    setSelectedReceipt(null);
+                  }}
+                  style={{ flex: 2, backgroundColor: '#FF6600', paddingVertical: 14, borderRadius: 10, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>Confirm & Accept</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </Modal>

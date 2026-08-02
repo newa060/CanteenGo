@@ -4,6 +4,8 @@ import { UpdateTables } from '../../types/database';
 import { OrderStatus } from '../../types';
 import { showSuccessToast } from '../errorHandler';
 import { pushNotificationService } from '../pushNotificationService';
+import { notificationRepository } from '../repositories/notificationRepository';
+import { supabase } from '../supabase';
 
 export const ORDERS_QUERY_KEY = 'orders';
 export const ORDER_QUERY_KEY = 'order';
@@ -53,11 +55,39 @@ export const useCreateOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateOrderData) => orderRepository.create(data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY, 'student', variables.student_id] });
-      queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY, 'canteen'] });
-      queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY, 'status'] });
+    onSuccess: async (data) => {
+      queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
       showSuccessToast('Order placed successfully!');
+
+      // Create DB Notification for Student
+      if (data.student_id) {
+        notificationRepository.create({
+          user_id: data.student_id,
+          title: 'Order Placed!',
+          message: `Your order #${data.id.slice(0, 8)} has been placed successfully.`,
+          type: 'order',
+        }).catch(() => {});
+      }
+
+      // Create DB Notification for Canteen Admins (if canteen linked)
+      if (data.canteen_id) {
+        const { data: canteenAdmins } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('canteen_id', data.canteen_id)
+          .eq('role', 'admin');
+
+        if (canteenAdmins) {
+          canteenAdmins.forEach((admin) => {
+            notificationRepository.create({
+              user_id: admin.id,
+              title: 'New Order Received',
+              message: `New order #${data.id.slice(0, 8)} received for रू ${data.total_amount}.`,
+              type: 'order',
+            }).catch(() => {});
+          });
+        }
+      }
     },
   });
 };
@@ -71,8 +101,34 @@ export const useUpdateOrderStatus = () => {
       queryClient.setQueryData([ORDER_QUERY_KEY, data.id], data);
       queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
       showSuccessToast(`Order ${data.status}`);
-      // Send device push notification to student
-      pushNotificationService.notifyOrderStatusChange(data.status, (data as any).pickup_code);
+
+      // Create DB Notification for Student — only on accepted or rejected
+      if (data.student_id && (data.status === 'preparing' || data.status === 'cancelled')) {
+        const statusMsgMap: Record<string, { title: string; message: string }> = {
+          preparing: {
+            title: 'Order Accepted! 🎉',
+            message: `Your order #${data.id.slice(0, 8)} has been accepted and is now being prepared!`,
+          },
+          cancelled: {
+            title: 'Order Rejected ❌',
+            message: `Your order #${data.id.slice(0, 8)} was rejected by the canteen.`,
+          },
+        };
+        const notif = statusMsgMap[data.status];
+        if (notif) {
+          notificationRepository.create({
+            user_id: data.student_id,
+            title: notif.title,
+            message: notif.message,
+            type: 'order',
+          }).catch(() => {});
+        }
+      }
+
+      // Send device push notification to student — only accepted or rejected
+      if (data.status === 'preparing' || data.status === 'cancelled') {
+        pushNotificationService.notifyOrderStatusChange(data.status, (data as any).pickup_code);
+      }
     },
   });
 };

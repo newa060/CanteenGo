@@ -30,10 +30,11 @@ import { useCartStore } from '../../store/cartStore';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCreateOrder } from '../../lib/hooks/useOrders';
+import { useCanteen } from '../../lib/hooks/useCanteen';
 import { cloudinaryService, optimizeImageUrl } from '../../lib/cloudinary';
 import { showErrorToast, showSuccessToast } from '../../lib/errorHandler';
 
-const TIME_SLOTS = ['08:00 - 09:00', '12:30 - 13:30', '18:00 - 20:00'];
+const FALLBACK_TIME_SLOTS = ['08:00 - 09:00', '12:30 - 13:30', '18:00 - 20:00'];
 
 export default function CartScreen() {
   const router = useRouter();
@@ -42,13 +43,35 @@ export default function CartScreen() {
   const { items, removeItem, clearCart, getTotalAmount } = useCartStore();
   const user = useAuthStore((s) => s.user);
   const createOrder = useCreateOrder();
+  const { data: canteenData } = useCanteen(user?.canteen_id);
+
+  const dynamicTimeSlots = useMemo(() => {
+    if (canteenData?.location) {
+      try {
+        const parsed = JSON.parse(canteenData.location);
+        if (Array.isArray(parsed?.slots) && parsed.slots.length > 0) {
+          return parsed.slots as string[];
+        }
+      } catch {}
+    }
+    return FALLBACK_TIME_SLOTS;
+  }, [canteenData]);
+
+  const canteenQrUrl = canteenData?.image_url || null;
 
   const [checkoutVisible, setCheckoutVisible] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[1]);
+  const [selectedSlot, setSelectedSlot] = useState('');
   const [copied, setCopied] = useState(false);
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Sync selectedSlot when dynamic slots load
+  React.useEffect(() => {
+    if (dynamicTimeSlots.length > 0 && !selectedSlot) {
+      setSelectedSlot(dynamicTimeSlots[0]);
+    }
+  }, [dynamicTimeSlots]);
 
   const totalAmount = getTotalAmount();
 
@@ -88,8 +111,8 @@ export default function CartScreen() {
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        quality: 0.8,
+        allowsEditing: false,
+        quality: 0.9,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         uploadReceipt(result.assets[0].uri);
@@ -114,8 +137,8 @@ export default function CartScreen() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.8,
+        allowsEditing: false,
+        quality: 0.9,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         uploadReceipt(result.assets[0].uri);
@@ -369,15 +392,15 @@ export default function CartScreen() {
                 <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase' }}>
                   CHOOSE PICKUP TIME SLOT
                 </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {TIME_SLOTS.map((slot) => {
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {dynamicTimeSlots.map((slot) => {
                     const isSel = selectedSlot === slot;
                     return (
                       <Pressable
                         key={slot}
                         onPress={() => setSelectedSlot(slot)}
                         style={{
-                          flex: 1,
+                          paddingHorizontal: 12,
                           paddingVertical: 10,
                           backgroundColor: isSel ? '#FF6600' : colors.background,
                           borderRadius: 8,
@@ -398,8 +421,12 @@ export default function CartScreen() {
                   SCAN TO PAY (eSewa / Khalti / Fonepay)
                 </Text>
                 <View style={{ backgroundColor: colors.background, borderRadius: 14, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: colors.border, gap: 12 }}>
-                  <View style={{ width: 180, height: 180, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, alignItems: 'center', justifyContent: 'center' }}>
-                    <QrCode color="#131313" size={150} />
+                  <View style={{ width: 200, height: 200, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 10, alignItems: 'center', justifyContent: 'center' }}>
+                    {canteenQrUrl ? (
+                      <Image source={{ uri: canteenQrUrl }} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="contain" />
+                    ) : (
+                      <QrCode color="#131313" size={160} />
+                    )}
                   </View>
                   <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>SCAN STATIONS CANTEEN QR</Text>
                   <Text style={{ fontSize: 10, color: colors.subtext, textAlign: 'center' }}>Pay exact amount रू {totalAmount} and upload payment receipt below</Text>

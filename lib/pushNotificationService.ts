@@ -77,13 +77,8 @@ export const pushNotificationService = {
   async notifyOrderStatusChange(status: string, pickupCode?: string) {
     const messages: Record<string, { title: string; body: string }> = {
       confirmed: { title: '✅ Order Confirmed!', body: 'Your order has been confirmed by the canteen.' },
-      preparing: { title: '👨‍🍳 Order Being Prepared', body: 'Your canteen is now preparing your order.' },
-      ready: {
-        title: '🎉 Order Ready for Pickup!',
-        body: pickupCode ? `Show code ${pickupCode} at the counter.` : 'Your order is ready! Head to the counter.',
-      },
-      completed: { title: '✔ Order Completed', body: 'Thanks for dining with CanteenGo!' },
-      cancelled: { title: '❌ Order Cancelled', body: 'Your order was cancelled. Contact the canteen for details.' },
+      preparing: { title: '✅ Order Accepted!', body: 'Your order has been accepted and is now being prepared.' },
+      cancelled: { title: '❌ Order Rejected', body: 'Your order was rejected by the canteen. Please contact them for details.' },
     };
 
     const msg = messages[status];
