@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useCartStore } from '../../store/cartStore';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
@@ -82,20 +83,24 @@ export default function CartScreen() {
     }));
   }, [items]);
 
-  const handleCopyTotal = () => {
+  const handleCopyTotal = async () => {
+    await Clipboard.setStringAsync(String(totalAmount));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const uploadReceipt = async (uri: string) => {
+    // Show local image instantly — no waiting for upload
+    setReceiptImage(uri);
     setIsUploading(true);
     try {
       const result = await cloudinaryService.uploadImage(uri, { folder: 'receipts' });
+      // Quietly swap local URI with the hosted Cloudinary URL
       setReceiptImage(result.secure_url);
       showSuccessToast('Receipt uploaded');
     } catch (e) {
       showErrorToast(e as any);
-      setReceiptImage(uri);
+      // Keep the local URI on failure — still usable
     } finally {
       setIsUploading(false);
     }
@@ -106,23 +111,18 @@ export default function CartScreen() {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Permission needed', 'Camera permission is required to capture payment receipt.');
-        const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-        setReceiptImage(fallback);
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: false,
         quality: 0.9,
       });
+      // Only set image if user actually took a photo; ignore cancel/back
       if (!result.canceled && result.assets && result.assets.length > 0) {
         uploadReceipt(result.assets[0].uri);
-      } else {
-        const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-        setReceiptImage(fallback);
       }
     } catch (e) {
-      const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-      setReceiptImage(fallback);
+      showErrorToast('Failed to open camera. Please try again.');
     }
   };
 
@@ -131,8 +131,6 @@ export default function CartScreen() {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Permission needed', 'Photo gallery permission is required to upload payment receipt.');
-        const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-        setReceiptImage(fallback);
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -140,15 +138,12 @@ export default function CartScreen() {
         allowsEditing: false,
         quality: 0.9,
       });
+      // Only set image if user actually selected one; ignore cancel/back
       if (!result.canceled && result.assets && result.assets.length > 0) {
         uploadReceipt(result.assets[0].uri);
-      } else {
-        const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-        setReceiptImage(fallback);
       }
     } catch (e) {
-      const fallback = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80';
-      setReceiptImage(fallback);
+      showErrorToast('Failed to open gallery. Please try again.');
     }
   };
 
