@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import React, { useEffect } from 'react';
 import { Home, Receipt, ShoppingBag, User } from 'lucide-react-native';
@@ -32,7 +33,7 @@ export default function StudentLayout() {
           height: 64,
           paddingBottom: 10,
           paddingTop: 8,
-          marginBottom: 10,
+          marginBottom: Platform.OS === 'web' ? 0 : 10,
         },
         tabBarActiveTintColor: '#FF6600',
         tabBarInactiveTintColor: isDarkMode ? '#888888' : '#64748B',
