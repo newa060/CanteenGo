@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Bell,
@@ -22,6 +22,7 @@ export default function StudentProfileScreen() {
   const router = useRouter();
 
   const { data: unreadCount = 0 } = useUnreadNotificationCount(user?.id);
+  const [privacyVisible, setPrivacyVisible] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -116,7 +117,7 @@ export default function StudentProfileScreen() {
             </View>
           </Pressable>
 
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 }}>
+          <Pressable onPress={() => setPrivacyVisible(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
                 <ShieldCheck color="#FF6600" size={18} />
@@ -126,6 +127,54 @@ export default function StudentProfileScreen() {
             <ChevronRight color={colors.subtext} size={18} />
           </Pressable>
         </View>
+
+        {/* Privacy & Terms Modal */}
+        <Modal visible={privacyVisible} animationType="slide" transparent onRequestClose={() => setPrivacyVisible(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' }}>
+              {/* Modal Header */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.text }}>Privacy & Terms</Text>
+                <Pressable onPress={() => setPrivacyVisible(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 16, color: colors.subtext, fontWeight: '700' }}>✕</Text>
+                </Pressable>
+              </View>
+              <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+                {/* Privacy Policy */}
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#FF6600', letterSpacing: 1, textTransform: 'uppercase' }}>Privacy Policy</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>What we collect</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  CanteenGo collects your name, email address, and canteen association to create and manage your student account. Payment screenshots you upload are stored securely to verify your orders.
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>How we use your data</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  Your data is used solely to process food orders, send order status notifications, and improve the app experience. We do not sell or share your personal information with third parties.
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>Data security</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  All data is encrypted in transit and stored securely using Supabase infrastructure. Payment screenshots are hosted on Cloudinary with restricted access.
+                </Text>
+                <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
+                {/* Terms of Service */}
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#FF6600', letterSpacing: 1, textTransform: 'uppercase' }}>Terms of Service</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>Ordering</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  Orders placed through CanteenGo are binding. Once confirmed, orders cannot be cancelled unless the canteen is unable to fulfil them. Please ensure your payment screenshot is accurate before submitting.
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>Payments</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  All payments are made directly to the canteen via eSewa, Khalti, or Fonepay. CanteenGo does not process or hold payments. Upload a clear payment screenshot as proof of payment.
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>Account responsibility</Text>
+                <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
+                  You are responsible for keeping your login credentials secure. Do not share your account with others. Misuse of the platform may result in account suspension.
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.mutedText, textAlign: 'center', marginTop: 8 }}>Last updated: August 2026</Text>
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
 
         {/* Logout Button */}
         <Pressable
