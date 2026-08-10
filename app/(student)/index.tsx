@@ -20,12 +20,7 @@ import { Product } from '../../types';
 import { Tables } from '../../types/database';
 import { optimizeImageUrl } from '../../lib/cloudinary';
 
-const FALLBACK_CATEGORIES = [
-  { id: 'all', name: 'All', icon: UtensilsCrossed },
-  { id: 'momo', name: 'Momo', icon: Pizza },
-  { id: 'chowmein', name: 'Chowmein', icon: UtensilsCrossed },
-  { id: 'beverages', name: 'Beverages', icon: Coffee },
-];
+// No static fallback categories — always use what the admin has set
 
 const CATEGORY_ICON_MAP: Record<string, any> = {
   all: UtensilsCrossed,
@@ -142,6 +137,7 @@ export default function StudentMenuScreen() {
 
   const displayCategories = useMemo(() => {
     const baseCats: Array<{ id: string; name: string; icon: any }> = [{ id: 'all', name: 'All', icon: UtensilsCrossed }];
+    // Use admin-defined categories from DB
     if (apiCategories && apiCategories.length > 0) {
       const mapped = apiCategories.map((c) => ({
         id: c.id,
@@ -150,8 +146,23 @@ export default function StudentMenuScreen() {
       }));
       return [...baseCats, ...mapped];
     }
-    return FALLBACK_CATEGORIES;
-  }, [apiCategories, loadingCats]);
+    // If no categories table entries but products exist, derive unique categories from products
+    if (apiProducts && apiProducts.length > 0) {
+      const seen = new Set<string>();
+      const derived: Array<{ id: string; name: string; icon: any }> = [];
+      for (const p of apiProducts as any[]) {
+        const catId: string = p.category_id || '';
+        const catName: string = p.category_name || catId || '';
+        if (catId && !seen.has(catId)) {
+          seen.add(catId);
+          derived.push({ id: catId, name: catName || catId, icon: getIconForCategory(catName, catId) });
+        }
+      }
+      if (derived.length > 0) return [...baseCats, ...derived];
+    }
+    // Still loading or no data — return just 'All'
+    return baseCats;
+  }, [apiCategories, apiProducts, loadingCats]);
 
   const displayProducts = useMemo(() => {
     const products = (apiProducts || []) as any[];
@@ -258,32 +269,48 @@ export default function StudentMenuScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}
         >
-          {displayCategories.map((cat) => {
-            const isActive = selectedCat === cat.id;
-            const IconComponent = cat.icon;
-            return (
-              <Pressable
-                key={cat.id}
-                onPress={() => setSelectedCat(cat.id)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  backgroundColor: isActive ? '#FF6600' : colors.surface,
-                  borderWidth: 1,
-                  borderColor: isActive ? '#FF6600' : colors.border,
-                  gap: 8,
-                }}
-              >
-                <IconComponent color={isActive ? '#FFFFFF' : colors.subtext} size={16} />
-                <Text style={{ color: isActive ? '#FFFFFF' : colors.subtext, fontWeight: '700', fontSize: 13 }}>
-                  {cat.name}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {loadingCats
+            ? // Skeleton loading pills
+              [1, 2, 3, 4].map((i) => (
+                <View
+                  key={i}
+                  style={{
+                    width: 80 + i * 10,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    opacity: 0.5,
+                  }}
+                />
+              ))
+            : displayCategories.map((cat) => {
+                const isActive = selectedCat === cat.id;
+                const IconComponent = cat.icon;
+                return (
+                  <Pressable
+                    key={cat.id}
+                    onPress={() => setSelectedCat(cat.id)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 20,
+                      backgroundColor: isActive ? '#FF6600' : colors.surface,
+                      borderWidth: 1,
+                      borderColor: isActive ? '#FF6600' : colors.border,
+                      gap: 8,
+                    }}
+                  >
+                    <IconComponent color={isActive ? '#FFFFFF' : colors.subtext} size={16} />
+                    <Text style={{ color: isActive ? '#FFFFFF' : colors.subtext, fontWeight: '700', fontSize: 13 }}>
+                      {cat.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
         </ScrollView>
 
         <View style={{ paddingHorizontal: 20, gap: 14 }}>
