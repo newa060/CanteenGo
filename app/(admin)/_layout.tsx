@@ -34,6 +34,7 @@ export default function AdminLayout() {
           height: 64,
           paddingBottom: 10,
           paddingTop: 8,
+          marginBottom: 10,
         },
         tabBarActiveTintColor: '#FF6600',
         tabBarInactiveTintColor: isDarkMode ? 'rgba(229,226,225,0.4)' : '#888888',

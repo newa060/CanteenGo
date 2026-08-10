@@ -32,6 +32,7 @@ export default function StudentLayout() {
           height: 64,
           paddingBottom: 10,
           paddingTop: 8,
+          marginBottom: 10,
         },
         tabBarActiveTintColor: '#FF6600',
         tabBarInactiveTintColor: isDarkMode ? '#888888' : '#64748B',
