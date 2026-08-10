@@ -35,10 +35,10 @@ export default function AdminLayout() {
           height: 64,
           paddingBottom: 10,
           paddingTop: 8,
-          marginBottom: 10,
+          marginBottom: 15,
           ...(Platform.OS === 'web' ? {
             position: 'absolute',
-            bottom: 10,
+            bottom: 15,
             left: 0,
             right: 0,
           } : {}),
