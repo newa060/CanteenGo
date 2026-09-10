@@ -23,6 +23,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-system-ui",
       [
         "expo-image-picker",
         {
