@@ -12,7 +12,7 @@ export const Input: React.FC<InputProps> = ({ label, error, style, ...props }) =
 
   return (
     <View style={{ marginBottom: 16 }}>
-      {label && (
+      {label ? (
         <Text
           style={{
             color: Colors.onSurfaceMuted,
@@ -25,7 +25,7 @@ export const Input: React.FC<InputProps> = ({ label, error, style, ...props }) =
         >
           {label}
         </Text>
-      )}
+      ) : null}
       <TextInput
         placeholderTextColor={Colors.onSurfaceDim}
         onFocus={() => setFocused(true)}
@@ -45,11 +45,11 @@ export const Input: React.FC<InputProps> = ({ label, error, style, ...props }) =
         ]}
         {...props}
       />
-      {error && (
+      {error ? (
         <Text style={{ color: Colors.danger, fontSize: 12, marginTop: 4 }}>
           {error}
         </Text>
-      )}
+      ) : null}
     </View>
   );
 };
