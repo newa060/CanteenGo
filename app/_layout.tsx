@@ -65,15 +65,6 @@ export default function RootLayout() {
         return;
       }
 
-      // Student without a canteen must join one first
-      if (targetRole === 'student' && !user.canteen_id) {
-        if (segments[1] !== 'canteen-code' && !hasNavigated.current) {
-          hasNavigated.current = true;
-          router.replace('/(auth)/canteen-code');
-          return;
-        }
-      }
-
       if ((inAuthGroup || segments[0] === undefined) && !hasNavigated.current) {
         hasNavigated.current = true;
         if (targetRole === 'admin') {

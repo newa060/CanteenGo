@@ -63,15 +63,25 @@ export default function StudentProfileScreen() {
           ACCOUNT INFO
         </Text>
         <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden', marginBottom: 20, borderWidth: 1, borderColor: colors.border }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <Pressable
+            onPress={() => {
+              if (!user?.canteen_id) {
+                router.push('/(auth)/canteen-code');
+              }
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}
+          >
             <School color="#FF6600" size={18} style={{ marginRight: 12 }} />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 12, color: colors.subtext }}>Campus Canteen</Text>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>
-                {user?.canteen_code ? `Code: ${user.canteen_code}` : 'Main Hub Canteen'}
+              <Text style={{ fontSize: 15, fontWeight: '700', color: user?.canteen_id ? colors.text : '#FF6600' }}>
+                {user?.canteen_code ? `Code: ${user.canteen_code}` : user?.canteen_id ? 'Main Hub Canteen' : 'Not Joined (Tap to connect)'}
               </Text>
             </View>
-          </View>
+            {!user?.canteen_id && (
+              <ChevronRight color="#FF6600" size={18} />
+            )}
+          </Pressable>
           <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
             <GraduationCap color="#FF6600" size={18} style={{ marginRight: 12 }} />
             <View>

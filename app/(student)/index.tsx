@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Bell, Coffee, Pizza, Search, ShoppingBag, UtensilsCrossed } from 'lucide-react-native';
+import { Bell, Coffee, LogOut, Pizza, Search, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useCartStore } from '../../store/cartStore';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
@@ -200,9 +200,13 @@ export default function StudentMenuScreen() {
           borderBottomColor: colors.border,
         }}
       >
-        <View>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.text }}>Main Hub Canteen</Text>
-          <Text style={{ fontSize: 12, color: colors.subtext, marginTop: 2 }}>Order ahead & skip the queue</Text>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.text }} numberOfLines={1}>
+            {user?.canteen_id ? 'Main Hub Canteen' : 'No Canteen Selected'}
+          </Text>
+          <Text style={{ fontSize: 12, color: colors.subtext, marginTop: 2 }}>
+            {user?.canteen_id ? 'Order ahead & skip the queue' : 'Join a canteen to browse the menu'}
+          </Text>
         </View>
         <Pressable
           onPress={() => router.push('/(student)/notifications')}
@@ -314,104 +318,186 @@ export default function StudentMenuScreen() {
               })}
         </ScrollView>
 
-        <View style={{ paddingHorizontal: 20, gap: 14 }}>
-          {filteredItems.map((item) => (
+        {!user?.canteen_id ? (
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginTop: 24,
+              backgroundColor: colors.surface,
+              borderRadius: 20,
+              padding: 28,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
             <View
-              key={item.id}
               style={{
-                backgroundColor: colors.surface,
-                borderRadius: 16,
-                padding: 14,
-                flexDirection: 'row',
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: 'rgba(255, 102, 0, 0.12)',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
+                marginBottom: 16,
                 borderWidth: 1,
-                borderColor: colors.border,
-                overflow: 'hidden',
+                borderColor: 'rgba(255, 102, 0, 0.25)',
               }}
             >
-              <Image
-                source={{ uri: item.image }}
-                style={{ width: 72, height: 72, borderRadius: 12, marginRight: 12 }}
-                resizeMode="cover"
-              />
-
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 2 }}>
-                  {item.name}
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.subtext, marginBottom: 6 }} numberOfLines={2}>
-                  {item.desc || item.description}
-                </Text>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#FF6600' }}>
-                  रू {item.price}
-                </Text>
-              </View>
-
-              {(() => {
-                const cartItem = items.find((i) => i.product.id === item.id);
-                const qty = cartItem?.quantity ?? 0;
-                const product = {
-                  id: item.id,
-                  name: item.name,
-                  price: item.price,
-                  description: item.desc || item.description,
-                  category_id: item.category_id,
-                  image_url: item.image_url || item.image,
-                  is_available: item.available ?? item.is_available ?? true,
-                  canteen_id: item.canteen_id,
-                  created_at: item.created_at || new Date().toISOString(),
-                };
-                if (qty === 0) {
-                  return (
-                    <Pressable
-                      onPress={() => addItem(product)}
-                      style={{
-                        backgroundColor: '#FF6600',
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                        borderRadius: 10,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <ShoppingBag color="#FFFFFF" size={13} />
-                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
-                    </Pressable>
-                  );
-                }
-                return (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: '#FF6600',
-                      borderRadius: 10,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => updateQuantity(item.id, qty - 1)}
-                      style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>−</Text>
-                    </Pressable>
-                    <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13, minWidth: 18, textAlign: 'center' }}>
-                      {qty}
-                    </Text>
-                    <Pressable
-                      onPress={() => addItem(product)}
-                      style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>+</Text>
-                    </Pressable>
-                  </View>
-                );
-              })()}
+              <Store color="#FF6600" size={30} />
             </View>
-          ))}
-        </View>
+
+            <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 8, textAlign: 'center' }}>
+              No Canteen Joined Yet
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: colors.subtext,
+                textAlign: 'center',
+                lineHeight: 20,
+                marginBottom: 24,
+                paddingHorizontal: 10,
+              }}
+            >
+              Join your campus canteen using a 6-digit code or by scanning their QR code to view today's menu and order ahead.
+            </Text>
+
+            <Pressable
+              onPress={() => router.push('/(auth)/canteen-code')}
+              style={{
+                width: '100%',
+                height: 48,
+                backgroundColor: '#FF6600',
+                borderRadius: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>
+                Join Your Canteen →
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/(student)/profile')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 16,
+              }}
+            >
+              <Text style={{ color: colors.subtext, fontSize: 13, fontWeight: '600' }}>
+                Go to Profile / Settings
+              </Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: 20, gap: 14 }}>
+            {filteredItems.length === 0 ? (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Text style={{ color: colors.subtext, fontSize: 14 }}>No food items available.</Text>
+              </View>
+            ) : (
+              filteredItems.map((item) => (
+                <View
+                  key={item.id}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderRadius: 16,
+                    padding: 14,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Image
+                    source={{ uri: item.image }}
+                    style={{ width: 72, height: 72, borderRadius: 12, marginRight: 12 }}
+                    resizeMode="cover"
+                  />
+
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 2 }}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.subtext, marginBottom: 6 }} numberOfLines={2}>
+                      {item.desc || item.description}
+                    </Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#FF6600' }}>
+                      रू {item.price}
+                    </Text>
+                  </View>
+
+                  {(() => {
+                    const cartItem = items.find((i) => i.product.id === item.id);
+                    const qty = cartItem?.quantity ?? 0;
+                    const product = {
+                      id: item.id,
+                      name: item.name,
+                      price: item.price,
+                      description: item.desc || item.description,
+                      category_id: item.category_id,
+                      image_url: item.image_url || item.image,
+                      is_available: item.available ?? item.is_available ?? true,
+                      canteen_id: item.canteen_id,
+                      created_at: item.created_at || new Date().toISOString(),
+                    };
+                    if (qty === 0) {
+                      return (
+                        <Pressable
+                          onPress={() => addItem(product)}
+                          style={{
+                            backgroundColor: '#FF6600',
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <ShoppingBag color="#FFFFFF" size={13} />
+                          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
+                        </Pressable>
+                      );
+                    }
+                    return (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: '#FF6600',
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Pressable
+                          onPress={() => updateQuantity(item.id, qty - 1)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>−</Text>
+                        </Pressable>
+                        <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13, minWidth: 18, textAlign: 'center' }}>
+                          {qty}
+                        </Text>
+                        <Pressable
+                          onPress={() => addItem(product)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>+</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })()}
+                </View>
+              ))
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {totalItemsCount > 0 && (
