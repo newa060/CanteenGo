@@ -4,6 +4,7 @@ import {
   FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -41,7 +42,7 @@ export default function CartScreen() {
   const router = useRouter();
   const { isDarkMode } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
-  const { items, removeItem, clearCart, getTotalAmount } = useCartStore();
+  const { items, removeItem, updateQuantity, clearCart, getTotalAmount } = useCartStore();
   const user = useAuthStore((s) => s.user);
   const createOrder = useCreateOrder();
   const { data: canteenData } = useCanteen(user?.canteen_id);
@@ -114,6 +115,8 @@ export default function CartScreen() {
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        cameraType: ImagePicker.CameraType.back,
         allowsEditing: false,
         quality: 0.9,
       });
@@ -153,6 +156,16 @@ export default function CartScreen() {
       return;
     }
     if (items.length === 0) return;
+
+    // Block order if no payment screenshot uploaded
+    if (!receiptImage) {
+      Alert.alert(
+        'Payment Screenshot Required',
+        'Please upload a screenshot of your payment before confirming the order.\n\nNote: Uploading a fake or invalid receipt may result in your order being cancelled by the admin.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
 
     setOrderSuccess(true);
     try {
@@ -258,9 +271,40 @@ export default function CartScreen() {
                     </Text>
                   </View>
 
-                  <Pressable onPress={() => removeItem(item.product.id)} style={{ padding: 8 }}>
-                    <Trash2 color="#EF4444" size={18} />
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Pressable
+                      onPress={() => updateQuantity(item.product.id, item.quantity - 1)}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        backgroundColor: item.quantity === 1 ? 'rgba(239,68,68,0.12)' : 'rgba(255,102,0,0.12)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {item.quantity === 1
+                        ? <Trash2 color="#EF4444" size={14} />
+                        : <Text style={{ color: '#FF6600', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>−</Text>
+                      }
+                    </Pressable>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: colors.text, minWidth: 20, textAlign: 'center' }}>
+                      {item.quantity}
+                    </Text>
+                    <Pressable
+                      onPress={() => updateQuantity(item.product.id, item.quantity + 1)}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        backgroundColor: 'rgba(255,102,0,0.12)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{ color: '#FF6600', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>+</Text>
+                    </Pressable>
+                  </View>
                 </View>
               );
             }}
@@ -273,6 +317,7 @@ export default function CartScreen() {
               borderTopColor: colors.border,
               paddingHorizontal: 20,
               paddingVertical: 16,
+              paddingBottom: Platform.OS === 'web' ? 16 : 98,
               gap: 12,
             }}
           >
@@ -428,10 +473,15 @@ export default function CartScreen() {
                 </View>
               </View>
 
-              <View style={{ gap: 10 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase' }}>
-                  UPLOAD PAYMENT SCREENSHOT
-                </Text>
+              <View style={{ gap: 8 }}>
+                <View style={{ gap: 4 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase' }}>
+                    UPLOAD PAYMENT SCREENSHOT
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#EF4444', fontWeight: '700', lineHeight: 14 }}>
+                    ⚠️ Put legitimate screenshot. Fake or invalid receipts will result in order cancellation by admin.
+                  </Text>
+                </View>
 
                 {receiptImage ? (
                   <View
@@ -521,16 +571,18 @@ export default function CartScreen() {
             <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border }}>
               <Pressable
                 onPress={handleConfirmOrder}
+                disabled={orderSuccess}
                 style={{
-                  backgroundColor: orderSuccess ? '#10B981' : '#FF6600',
+                  backgroundColor: orderSuccess ? '#10B981' : receiptImage ? '#FF6600' : '#9CA3AF',
                   paddingVertical: 16,
                   borderRadius: 12,
                   alignItems: 'center',
                   justifyContent: 'center',
+                  opacity: orderSuccess ? 1 : receiptImage ? 1 : 0.85,
                 }}
               >
                 <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                  {orderSuccess ? '✓ ORDER SUBMITTED SUCCESS' : 'Confirm & Place Order'}
+                  {orderSuccess ? '✓ ORDER SUBMITTED SUCCESS' : receiptImage ? 'Confirm & Place Order' : '📎 Upload Receipt to Continue'}
                 </Text>
               </Pressable>
             </View>

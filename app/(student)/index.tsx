@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -124,7 +125,7 @@ export default function StudentMenuScreen() {
 
   const [selectedCat, setSelectedCat] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const { addItem, getTotalItems, getTotalAmount } = useCartStore();
+  const { addItem, removeItem, updateQuantity, items, getTotalItems, getTotalAmount } = useCartStore();
   const user = useAuthStore((s) => s.user);
   const canteenId = user?.canteen_id || undefined;
 
@@ -347,33 +348,67 @@ export default function StudentMenuScreen() {
                 </Text>
               </View>
 
-              <Pressable
-                onPress={() =>
-                  addItem({
-                    id: item.id,
-                    name: item.name,
-                    price: item.price,
-                    description: item.desc || item.description,
-                    category_id: item.category_id,
-                    image_url: item.image_url || item.image,
-                    is_available: item.available ?? item.is_available ?? true,
-                    canteen_id: item.canteen_id,
-                    created_at: item.created_at || new Date().toISOString(),
-                  })
+              {(() => {
+                const cartItem = items.find((i) => i.product.id === item.id);
+                const qty = cartItem?.quantity ?? 0;
+                const product = {
+                  id: item.id,
+                  name: item.name,
+                  price: item.price,
+                  description: item.desc || item.description,
+                  category_id: item.category_id,
+                  image_url: item.image_url || item.image,
+                  is_available: item.available ?? item.is_available ?? true,
+                  canteen_id: item.canteen_id,
+                  created_at: item.created_at || new Date().toISOString(),
+                };
+                if (qty === 0) {
+                  return (
+                    <Pressable
+                      onPress={() => addItem(product)}
+                      style={{
+                        backgroundColor: '#FF6600',
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <ShoppingBag color="#FFFFFF" size={13} />
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
+                    </Pressable>
+                  );
                 }
-                style={{
-                  backgroundColor: '#FF6600',
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 10,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <ShoppingBag color="#FFFFFF" size={13} />
-                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
-              </Pressable>
+                return (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#FF6600',
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => updateQuantity(item.id, qty - 1)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>−</Text>
+                    </Pressable>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13, minWidth: 18, textAlign: 'center' }}>
+                      {qty}
+                    </Text>
+                    <Pressable
+                      onPress={() => addItem(product)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>+</Text>
+                    </Pressable>
+                  </View>
+                );
+              })()}
             </View>
           ))}
         </View>
@@ -383,7 +418,7 @@ export default function StudentMenuScreen() {
         <View
           style={{
             position: 'absolute',
-            bottom: 20,
+            bottom: Platform.OS === 'web' ? 20 : 100,
             left: 20,
             right: 20,
             backgroundColor: '#FF6600',

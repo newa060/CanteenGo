@@ -1,5 +1,5 @@
 import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from '../constants';
-import { handleError } from './errorHandler';
+import { handleError, showErrorToast } from './errorHandler';
 
 export interface CloudinaryUploadOptions {
   folder?: string;
@@ -79,13 +79,22 @@ export const cloudinaryService = {
     const formData = new FormData();
     const filename = imageUri.split('/').pop() || `upload_${Date.now()}.jpg`;
     const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image/jpeg';
+    const mimeType = match ? `image/${match[1].toLowerCase().replace('jpg', 'jpeg')}` : 'image/jpeg';
 
-    formData.append('file', {
-      uri: imageUri,
-      name: filename,
-      type,
-    } as any);
+    if (typeof document !== 'undefined') {
+      // Running on web
+      const fetchResponse = await fetch(imageUri);
+      const blob = await fetchResponse.blob();
+      const file = new File([blob], filename, { type: mimeType });
+      formData.append('file', file);
+    } else {
+      // Running on native (iOS / Android)
+      formData.append('file', {
+        uri: imageUri,
+        name: filename,
+        type: mimeType,
+      } as any);
+    }
 
     if (CLOUDINARY_UPLOAD_PRESET) {
       formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
@@ -101,34 +110,49 @@ export const cloudinaryService = {
       formData.append('public_id', options.public_id);
     }
 
-    try {
-      const response = await fetch(`${baseUrl}/image/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${baseUrl}/image/upload`);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errMsg = errorData.error?.message || `Cloudinary upload failed (HTTP ${response.status})`;
-        console.error('Cloudinary upload error response:', errorData);
-        showErrorToast(errMsg);
-        throw new Error(errMsg);
-      }
-
-      const data = await response.json();
-      return {
-        secure_url: data.secure_url,
-        public_id: data.public_id,
-        width: data.width,
-        height: data.height,
-        format: data.format,
-        bytes: data.bytes,
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve({
+              secure_url: data.secure_url,
+              public_id: data.public_id,
+              width: data.width,
+              height: data.height,
+              format: data.format,
+              bytes: data.bytes,
+            });
+          } catch (err) {
+            showErrorToast('Failed to parse Cloudinary upload response');
+            reject(err);
+          }
+        } else {
+          let errMsg = `Cloudinary upload failed (HTTP ${xhr.status})`;
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            if (errorData.error?.message) {
+              errMsg = errorData.error.message;
+            }
+          } catch (e) {}
+          console.error('Cloudinary upload error response:', xhr.responseText);
+          showErrorToast(errMsg);
+          reject(new Error(errMsg));
+        }
       };
-    } catch (error: any) {
-      console.error('Cloudinary upload exception:', error);
-      showErrorToast(error?.message || 'Failed to upload image to Cloudinary');
-      throw error;
-    }
+
+      xhr.onerror = (e) => {
+        console.error('Cloudinary upload XHR exception:', e);
+        const errMsg = 'Network error while uploading image to Cloudinary';
+        showErrorToast(errMsg);
+        reject(new Error(errMsg));
+      };
+
+      xhr.send(formData);
+    });
   },
 
   async deleteImage(publicId: string): Promise<void> {
