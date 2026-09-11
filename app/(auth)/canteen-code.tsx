@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, ImageBackground, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Camera, QrCode, X } from 'lucide-react-native';
+import { ArrowLeft, Camera, QrCode, X } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuthStore } from '../../store/authStore';
 import { showErrorToast, showSuccessToast } from '../../lib/errorHandler';
@@ -128,8 +128,30 @@ export default function CanteenCodeScreen() {
             borderWidth: 1,
             borderColor: 'rgba(255, 102, 0, 0.2)',
             alignItems: 'center',
+            position: 'relative',
           }}
         >
+          {/* Back Button */}
+          <Pressable
+            onPress={() => router.replace('/(student)')}
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 16,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              zIndex: 10,
+            }}
+          >
+            <ArrowLeft color="#E5E2E1" size={18} />
+          </Pressable>
+
           <View
             style={{
               width: 64,
@@ -139,6 +161,7 @@ export default function CanteenCodeScreen() {
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: 20,
+              marginTop: 6,
               borderWidth: 1,
               borderColor: 'rgba(255, 102, 0, 0.3)',
             }}
