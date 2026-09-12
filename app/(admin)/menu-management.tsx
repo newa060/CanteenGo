@@ -126,11 +126,32 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
         finalImageUrl = imageUri;
       }
 
+      let canteenIdToUse = user?.canteen_id;
+      if (!canteenIdToUse) {
+        const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
+        if (canteens && canteens.length > 0) {
+          canteenIdToUse = canteens[0].id;
+        }
+      }
+
+      let categoryIdToUse = category;
+      if (!categoryIdToUse) {
+        if (dbCategories && dbCategories.length > 0) {
+          categoryIdToUse = dbCategories[0].id;
+        } else {
+          const createdCat = await createCategory.mutateAsync({
+            name: 'General',
+            canteen_id: canteenIdToUse || undefined,
+          });
+          categoryIdToUse = createdCat?.id || '';
+        }
+      }
+
       if (isEdit && editItem) {
         await updateProduct.mutateAsync({
           id: editItem.id,
           updates: {
-            category_id: category || undefined,
+            category_id: categoryIdToUse || undefined,
             name: name.trim(),
             description: desc.trim() || undefined,
             price: priceNum,
@@ -138,25 +159,16 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
             image_url: finalImageUrl,
           } as any,
         });
-        showSuccessToast('Item updated successfully!');
       } else {
-        let canteenIdToUse = user?.canteen_id;
-        if (!canteenIdToUse) {
-          const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
-          if (canteens && canteens.length > 0) {
-            canteenIdToUse = canteens[0].id;
-          }
-        }
         await createProduct.mutateAsync({
           canteen_id: canteenIdToUse || undefined,
-          category_id: category || undefined,
+          category_id: categoryIdToUse,
           name: name.trim(),
           description: desc.trim() || undefined,
           price: priceNum,
           is_available: available,
           image_url: finalImageUrl,
         });
-        showSuccessToast('Item added successfully!');
       }
 
       onClose();
@@ -200,7 +212,6 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
       }
       setNewCatName('');
       setShowCategoryPicker(false);
-      showSuccessToast(`Category "${trimmed}" added!`);
     } catch (e: any) {
       showErrorToast(e?.message || 'Failed to add category');
     } finally {
@@ -341,7 +352,7 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
               {/* Category Selector Tile */}
               <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: colors.subtext }}>
-                  Category
+                  Category <Text style={{ color: '#FF6600' }}>*</Text>
                 </Text>
                 <Pressable
                   onPress={() => setShowCategoryPicker(true)}
@@ -360,7 +371,7 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Tag color={selectedCategoryObj ? '#FF6600' : colors.mutedText} size={16} />
                     <Text style={{ fontSize: 14, fontWeight: selectedCategoryObj ? '700' : '400', color: selectedCategoryObj ? colors.text : colors.mutedText }}>
-                      {selectedCategoryObj ? selectedCategoryObj.name : 'Select Category (Optional)'}
+                      {selectedCategoryObj ? selectedCategoryObj.name : 'Select Category'}
                     </Text>
                   </View>
                   <ChevronDown color={colors.subtext} size={18} />
@@ -676,6 +687,10 @@ export default function MenuManagementScreen() {
     }
   };
 
+  if (loadingProducts) {
+    return <LoadingScreen message="Loading menu items..." />;
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ProductModal
@@ -791,7 +806,17 @@ export default function MenuManagementScreen() {
                 />
 
                 {!item.available && (
-                  <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: isDarkMode ? 'rgba(19, 19, 19, 0.75)' : 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                  <View
+                    style={[
+                      StyleSheet.absoluteFillObject,
+                      {
+                        backgroundColor: isDarkMode ? 'rgba(19, 19, 19, 0.75)' : 'rgba(255, 255, 255, 0.75)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1,
+                      },
+                    ]}
+                  >
                     <View style={{ borderWidth: 2, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 8, transform: [{ rotate: '12deg' }] }}>
                       <Text style={{ fontSize: 14, fontWeight: '800', color: colors.mutedText, letterSpacing: 4, textTransform: 'uppercase' }}>OUT OF STOCK</Text>
                     </View>
@@ -808,9 +833,31 @@ export default function MenuManagementScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
-                      if (dbProducts && dbProducts.some((p) => p.id === item.id)) {
-                        deleteProduct.mutate(item.id);
-                      }
+                      Alert.alert(
+                        'Delete Item',
+                        `Are you sure you want to delete "${item.name}"?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await deleteProduct.mutateAsync(item.id);
+                              } catch (err: any) {
+                                if (
+                                  err?.message?.toLowerCase().includes('foreign key') ||
+                                  err?.message?.toLowerCase().includes('order_items') ||
+                                  err?.code === '23503'
+                                ) {
+                                  await toggleAvailability.mutateAsync({ id: item.id, isAvailable: false });
+                                  showErrorToast('Item has order history. Marked as unavailable instead of deleting.');
+                                }
+                              }
+                            },
+                          },
+                        ]
+                      );
                     }}
                     style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}
                   >
