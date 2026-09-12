@@ -20,8 +20,11 @@ interface AdminDrawerProps {
   onClose: () => void;
 }
 
+import { useCanteen } from '../lib/hooks/useCanteen';
+
 export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
+  const { data: canteen } = useCanteen(user?.canteen_id);
   const { isDarkMode, toggleTheme } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
   const router = useRouter();
@@ -96,7 +99,7 @@ export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
               </View>
               <View>
                 <Text style={{ fontSize: 18, fontWeight: '800', color: '#FF6600', letterSpacing: -0.5, textTransform: 'uppercase', lineHeight: 20 }}>
-                  EMBER OPS
+                  {canteen?.name || 'EMBER OPS'}
                 </Text>
                 <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' }}>
                   CAFETERIA-GO ADMIN

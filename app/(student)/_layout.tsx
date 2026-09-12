@@ -81,6 +81,7 @@ export default function StudentLayout() {
         name="notifications"
         options={{
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
