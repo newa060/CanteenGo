@@ -4,9 +4,9 @@ import { useRouter } from 'expo-router';
 import {
   ChefHat,
   ChevronDown,
+  ChevronUp,
   LogOut,
   QrCode,
-  ReceiptText,
   Settings,
   UtensilsCrossed,
   X,
@@ -17,28 +17,27 @@ import { getThemeColors, useThemeStore } from '../store/themeStore';
 interface AdminDrawerProps {
   visible: boolean;
   onClose: () => void;
-  activeItem?: 'settings' | 'menu' | 'qr';
 }
 
-export default function AdminDrawer({ visible, onClose, activeItem = 'settings' }: AdminDrawerProps) {
+export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
   const { logout } = useAuthStore();
   const { isDarkMode, toggleTheme } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
   const router = useRouter();
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const navItems = [
-    {
-      key: 'settings',
-      label: 'Operational Settings',
-      icon: Settings,
-      route: '/(admin)/settings',
-    },
     {
       key: 'menu',
       label: 'Menu Management',
       icon: UtensilsCrossed,
       route: '/(admin)/menu-management',
+    },
+    {
+      key: 'settings',
+      label: 'Canteen Settings',
+      icon: Settings,
+      route: '/(admin)/settings',
     },
     {
       key: 'qr',
@@ -120,7 +119,6 @@ export default function AdminDrawer({ visible, onClose, activeItem = 'settings' 
               </Text>
 
               {navItems.map((item) => {
-                const isActive = activeItem === item.key;
                 const IconComp = item.icon;
                 return (
                   <Pressable
@@ -137,9 +135,6 @@ export default function AdminDrawer({ visible, onClose, activeItem = 'settings' 
                       paddingVertical: 14,
                       borderRadius: 10,
                       marginBottom: 4,
-                      backgroundColor: isActive ? 'rgba(255, 102, 0, 0.08)' : 'transparent',
-                      borderRightWidth: isActive ? 4 : 0,
-                      borderRightColor: '#FF6600',
                     }}
                   >
                     <IconComp color="#FF6600" size={22} />
@@ -149,7 +144,7 @@ export default function AdminDrawer({ visible, onClose, activeItem = 'settings' 
               })}
             </View>
 
-            {/* Settings collapsible */}
+            {/* App Settings collapsible */}
             <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 16, paddingTop: 16 }}>
               <Pressable
                 onPress={() => setSettingsOpen(!settingsOpen)}
@@ -157,13 +152,11 @@ export default function AdminDrawer({ visible, onClose, activeItem = 'settings' 
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
                   <Settings color={colors.subtext} size={22} />
-                  <Text style={{ color: colors.subtext, fontSize: 14, fontWeight: '700' }}>Settings</Text>
+                  <Text style={{ color: colors.subtext, fontSize: 14, fontWeight: '700' }}>App Settings</Text>
                 </View>
-                <ChevronDown
-                  color={colors.subtext}
-                  size={16}
-                  style={{ transform: [{ rotate: settingsOpen ? '0deg' : '-90deg' }] }}
-                />
+                {settingsOpen
+                  ? <ChevronUp color={colors.subtext} size={16} />
+                  : <ChevronDown color={colors.subtext} size={16} />}
               </Pressable>
 
               {settingsOpen && (

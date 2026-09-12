@@ -17,7 +17,7 @@ import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Edit2, Plus, Search, Tras
 import { useRouter } from 'expo-router';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { useCategories } from '../../lib/hooks/useCategories';
+import { useCategories, useCreateCategory, useDeleteCategory, useUpdateCategory } from '../../lib/hooks/useCategories';
 import { useCreateProduct, useDeleteProduct, useProducts, useToggleProductAvailability, useUpdateProduct } from '../../lib/hooks/useProducts';
 import { cloudinaryService, optimizeImageUrl } from '../../lib/cloudinary';
 import { showSuccessToast, showErrorToast } from '../../lib/errorHandler';
@@ -419,13 +419,26 @@ export default function MenuManagementScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editItem, setEditItem] = useState<DisplayItem | null>(null);
   const [search, setSearch] = useState('');
+  // optimistic toggle state: { [id]: boolean | undefined }
+  const [optimisticAvail, setOptimisticAvail] = useState<Record<string, boolean>>({});
+
+  // Category management state
+  const createCategory = useCreateCategory();
+  const updateCategory = useUpdateCategory();
+  const deleteCategory = useDeleteCategory();
+  const user = useAuthStore((s) => s.user);
+  const [showCatSection, setShowCatSection] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null);
 
   const displayProducts = useMemo(() => {
     const products = (dbProducts || []) as any[];
+    const catMap: Record<string, string> = {};
+    (dbCategories || []).forEach((c) => { catMap[c.id] = c.name; });
     return products.map((p) => ({
       id: p.id,
       name: p.name,
-      category: p.category_id || 'MOMO',
+      category: p.category_id ? (catMap[p.category_id] || 'Uncategorized') : 'Uncategorized',
       category_id: p.category_id,
       price: `RS ${p.price}`,
       priceNum: p.price,
@@ -433,7 +446,7 @@ export default function MenuManagementScreen() {
       desc: p.description,
       image: optimizeImageUrl(p.image_url, { width: 600, quality: 80 }),
     }));
-  }, [dbProducts]);
+  }, [dbProducts, dbCategories]);
 
   const CATEGORIES = useMemo(() => {
     if (dbCategories && dbCategories.length > 0) {
@@ -449,9 +462,40 @@ export default function MenuManagementScreen() {
   });
 
   const toggleAvail = (id: string, currentVal: boolean) => {
+    const newVal = !currentVal;
+    // Optimistic update
+    setOptimisticAvail((prev) => ({ ...prev, [id]: newVal }));
     if (dbProducts && dbProducts.some((p) => p.id === id)) {
-      toggleAvailability.mutate({ id, isAvailable: !currentVal });
+      toggleAvailability.mutate(
+        { id, isAvailable: newVal },
+        {
+          onError: () => {
+            // Revert on error
+            setOptimisticAvail((prev) => ({ ...prev, [id]: currentVal }));
+          },
+        }
+      );
     }
+  };
+
+  const handleCreateCategory = async () => {
+    const trimmed = newCatName.trim();
+    if (!trimmed) return;
+    await createCategory.mutateAsync({ name: trimmed, canteen_id: user?.canteen_id || undefined } as any);
+    setNewCatName('');
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editingCat) return;
+    await updateCategory.mutateAsync({ id: editingCat.id, updates: { name: editingCat.name } as any });
+    setEditingCat(null);
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    Alert.alert('Delete Category', 'Are you sure? Items in this category will be uncategorized.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteCategory.mutate(id) },
+    ]);
   };
 
   return (
@@ -498,23 +542,105 @@ export default function MenuManagementScreen() {
             />
           </View>
 
-          <Pressable
-            onPress={() => setShowAddModal(true)}
-            style={{
-              backgroundColor: '#FF6600',
-              paddingVertical: 14,
-              borderRadius: 6,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
-            <Plus color="#FFFFFF" size={18} />
-            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>
-              ADD NEW ITEM
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Pressable
+              onPress={() => setShowAddModal(true)}
+              style={{
+                flex: 1,
+                backgroundColor: '#FF6600',
+                paddingVertical: 14,
+                borderRadius: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <Plus color="#FFFFFF" size={18} />
+              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>
+                ADD ITEM
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowCatSection(!showCatSection)}
+              style={{
+                paddingHorizontal: 16,
+                backgroundColor: showCatSection ? 'rgba(255,102,0,0.12)' : colors.surface,
+                borderWidth: 1,
+                borderColor: showCatSection ? '#FF6600' : colors.border,
+                paddingVertical: 14,
+                borderRadius: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <ChevronDown color={showCatSection ? '#FF6600' : colors.subtext} size={16} />
+              <Text style={{ color: showCatSection ? '#FF6600' : colors.subtext, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                CATEGORIES
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Category Management Section */}
+          {showCatSection && (
+            <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 16, gap: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 2, color: colors.mutedText, textTransform: 'uppercase' }}>Manage Categories</Text>
+
+              {/* Add new category */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={editingCat ? editingCat.name : newCatName}
+                  onChangeText={(t) => editingCat ? setEditingCat({ ...editingCat, name: t }) : setNewCatName(t)}
+                  placeholder={editingCat ? 'Edit category name...' : 'New category name...'}
+                  placeholderTextColor={colors.mutedText}
+                  style={{ flex: 1, backgroundColor: colors.inputBg, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14, borderWidth: 1, borderColor: editingCat ? '#FF6600' : colors.border }}
+                />
+                <Pressable
+                  onPress={editingCat ? handleUpdateCategory : handleCreateCategory}
+                  style={{ backgroundColor: '#FF6600', borderRadius: 6, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {editingCat
+                    ? <CheckCircle2 color="#FFFFFF" size={18} />
+                    : <Plus color="#FFFFFF" size={18} />}
+                </Pressable>
+                {editingCat && (
+                  <Pressable
+                    onPress={() => setEditingCat(null)}
+                    style={{ backgroundColor: colors.inputBg, borderRadius: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <X color={colors.mutedText} size={18} />
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Existing categories list */}
+              {(dbCategories || []).map((cat) => (
+                <View key={cat.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <Text style={{ flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' }}>{cat.name}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => setEditingCat({ id: cat.id, name: cat.name })}
+                      style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,102,0,0.1)', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Edit2 color="#FF6600" size={14} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDeleteCategory(cat.id)}
+                      style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(239,68,68,0.1)', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Trash2 color="#EF4444" size={14} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              {(!dbCategories || dbCategories.length === 0) && (
+                <Text style={{ color: colors.mutedText, fontSize: 13, textAlign: 'center', paddingVertical: 8 }}>No categories yet. Add one above.</Text>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Categories Pills */}
@@ -562,13 +688,13 @@ export default function MenuManagementScreen() {
               <View style={{ height: 160, backgroundColor: isDarkMode ? '#2A2A2A' : '#E2E8F0', position: 'relative' }}>
                 <Image
                   source={{ uri: item.image }}
-                  style={{ width: '100%', height: '100%' }}
+                  style={{ width: '100%', height: '100%', opacity: (optimisticAvail[item.id] ?? item.available) ? 1 : 0.35 }}
                   resizeMode="cover"
                 />
 
-                {!item.available && (
-                  <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: isDarkMode ? 'rgba(19, 19, 19, 0.75)' : 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-                    <View style={{ borderWidth: 2, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 8, transform: [{ rotate: '12deg' }] }}>
+                {!(optimisticAvail[item.id] ?? item.available) && (
+                  <View style={{ ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                    <View style={{ borderWidth: 2, borderColor: colors.mutedText, paddingHorizontal: 16, paddingVertical: 8, transform: [{ rotate: '12deg' }] }}>
                       <Text style={{ fontSize: 14, fontWeight: '800', color: colors.mutedText, letterSpacing: 4, textTransform: 'uppercase' }}>OUT OF STOCK</Text>
                     </View>
                   </View>
@@ -614,10 +740,10 @@ export default function MenuManagementScreen() {
 
                 {/* Available Toggle */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', color: item.available ? '#FF6600' : colors.mutedText }}>
-                    {item.available ? 'AVAILABLE' : 'UNAVAILABLE'}
+                  <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', color: (optimisticAvail[item.id] ?? item.available) ? '#FF6600' : colors.mutedText }}>
+                    {(optimisticAvail[item.id] ?? item.available) ? 'AVAILABLE' : 'UNAVAILABLE'}
                   </Text>
-                  <Switch value={item.available} onValueChange={() => toggleAvail(item.id, item.available)} trackColor={{ false: '#353534', true: '#FF6600' }} thumbColor="#FFFFFF" />
+                  <Switch value={optimisticAvail[item.id] ?? item.available} onValueChange={() => toggleAvail(item.id, optimisticAvail[item.id] ?? item.available)} trackColor={{ false: '#353534', true: '#FF6600' }} thumbColor="#FFFFFF" />
                 </View>
               </View>
             </View>
