@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -30,84 +31,7 @@ const CATEGORY_ICON_MAP: Record<string, any> = {
   pizza: Pizza,
 };
 
-const FALLBACK_FOOD_ITEMS: any[] = [
-  {
-    id: '11111111-1111-4111-8111-111111111111',
-    name: 'Classic Chicken Momo',
-    description: 'Steamed dumplings filled with spiced minced chicken & tomato chutney',
-    price: 180,
-    image_url: 'https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&auto=format&fit=crop&q=80',
-    image: 'https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&auto=format&fit=crop&q=80',
-    category_id: 'momo',
-    category: 'Momo',
-    is_available: true,
-    available: true,
-    canteen_id: 'canteen-1',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    stock: 50,
-    rating: 4.5,
-    preparation_time_mins: 15,
-    desc: 'Steamed dumplings filled with spiced minced chicken & tomato chutney',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222222',
-    name: 'Veg Hakka Noodles',
-    description: 'Stir-fried noodles with fresh garden vegetables & savory soy sauce',
-    price: 150,
-    image_url: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=600&auto=format&fit=crop&q=80',
-    image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=600&auto=format&fit=crop&q=80',
-    category_id: 'chowmein',
-    category: 'Chowmein',
-    is_available: true,
-    available: true,
-    canteen_id: 'canteen-1',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    stock: 50,
-    rating: 4.2,
-    preparation_time_mins: 10,
-    desc: 'Stir-fried noodles with fresh garden vegetables & savory soy sauce',
-  },
-  {
-    id: '33333333-3333-4333-8333-333333333333',
-    name: 'Iced Cold Coffee',
-    description: 'Rich espresso blended with chilled milk, vanilla & topped with ice cream',
-    price: 120,
-    image_url: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=600&auto=format&fit=crop&q=80',
-    image: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=600&auto=format&fit=crop&q=80',
-    category_id: 'beverages',
-    category: 'Beverages',
-    is_available: true,
-    available: true,
-    canteen_id: 'canteen-1',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    stock: 50,
-    rating: 4.7,
-    preparation_time_mins: 5,
-    desc: 'Rich espresso blended with chilled milk, vanilla & topped with ice cream',
-  },
-  {
-    id: '44444444-4444-4444-8444-444444444444',
-    name: 'Cheese Momo (Fried)',
-    description: 'Crispy golden fried momo stuffed with rich melted mozzarella',
-    price: 210,
-    image_url: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=600&auto=format&fit=crop&q=80',
-    image: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=600&auto=format&fit=crop&q=80',
-    category_id: 'momo',
-    category: 'Momo',
-    is_available: true,
-    available: true,
-    canteen_id: 'canteen-1',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    stock: 50,
-    rating: 4.8,
-    preparation_time_mins: 18,
-    desc: 'Crispy golden fried momo stuffed with rich melted mozzarella',
-  },
-];
+
 
 const getIconForCategory = (name: string, id: string): any => {
   if (CATEGORY_ICON_MAP[id]) return CATEGORY_ICON_MAP[id];
@@ -124,7 +48,7 @@ export default function StudentMenuScreen() {
 
   const [selectedCat, setSelectedCat] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const { addItem, getTotalItems, getTotalAmount } = useCartStore();
+  const { addItem, removeItem, updateQuantity, items, getTotalItems, getTotalAmount } = useCartStore();
   const user = useAuthStore((s) => s.user);
   const canteenId = user?.canteen_id || undefined;
 
@@ -431,33 +355,67 @@ export default function StudentMenuScreen() {
                     </Text>
                   </View>
 
-                  <Pressable
-                    onPress={() =>
-                      addItem({
-                        id: item.id,
-                        name: item.name,
-                        price: item.price,
-                        description: item.desc || item.description,
-                        category_id: item.category_id,
-                        image_url: item.image_url || item.image,
-                        is_available: item.available ?? item.is_available ?? true,
-                        canteen_id: item.canteen_id,
-                        created_at: item.created_at || new Date().toISOString(),
-                      })
+                  {(() => {
+                    const cartItem = items.find((i) => i.product.id === item.id);
+                    const qty = cartItem?.quantity ?? 0;
+                    const product = {
+                      id: item.id,
+                      name: item.name,
+                      price: item.price,
+                      description: item.desc || item.description,
+                      category_id: item.category_id,
+                      image_url: item.image_url || item.image,
+                      is_available: item.available ?? item.is_available ?? true,
+                      canteen_id: item.canteen_id,
+                      created_at: item.created_at || new Date().toISOString(),
+                    };
+                    if (qty === 0) {
+                      return (
+                        <Pressable
+                          onPress={() => addItem(product)}
+                          style={{
+                            backgroundColor: '#FF6600',
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <ShoppingBag color="#FFFFFF" size={13} />
+                          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
+                        </Pressable>
+                      );
                     }
-                    style={{
-                      backgroundColor: '#FF6600',
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      borderRadius: 10,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    <ShoppingBag color="#FFFFFF" size={13} />
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>ADD</Text>
-                  </Pressable>
+                    return (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: '#FF6600',
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Pressable
+                          onPress={() => updateQuantity(item.id, qty - 1)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>−</Text>
+                        </Pressable>
+                        <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13, minWidth: 18, textAlign: 'center' }}>
+                          {qty}
+                        </Text>
+                        <Pressable
+                          onPress={() => addItem(product)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 18 }}>+</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })()}
                 </View>
               ))
             )}
@@ -469,7 +427,7 @@ export default function StudentMenuScreen() {
         <View
           style={{
             position: 'absolute',
-            bottom: 20,
+            bottom: Platform.OS === 'web' ? 20 : 100,
             left: 20,
             right: 20,
             backgroundColor: '#FF6600',

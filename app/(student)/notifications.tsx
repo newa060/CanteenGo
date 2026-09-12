@@ -1,11 +1,13 @@
-import React, { useMemo } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Bell, CheckCircle2, AlertCircle, Gift, ChevronRight } from 'lucide-react-native';
-import { Colors } from '../../constants/colors';
+import React, { useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { Bell, CheckCircle2, AlertCircle, Gift, Trash2 } from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { useMarkAllNotificationsAsRead, useNotifications } from '../../lib/hooks/useNotifications';
+import {
+  useDeleteNotification,
+  useMarkAllNotificationsAsRead,
+  useNotifications,
+} from '../../lib/hooks/useNotifications';
 import { useStudentOrders } from '../../lib/hooks/useOrders';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { showSuccessToast } from '../../lib/errorHandler';
@@ -46,8 +48,18 @@ const getTypeColor = (type: string): string => {
   }
 };
 
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  /** true = stored in DB (call API to delete); false = synthesized locally (dismiss from state) */
+  isDbRecord: boolean;
+};
+
 export default function NotificationsScreen() {
-  const router = useRouter();
   const { isDarkMode } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
   const user = useAuthStore((s) => s.user);
@@ -55,11 +67,15 @@ export default function NotificationsScreen() {
   const { data: dbNotifications, isLoading } = useNotifications(user?.id, true);
   const { data: studentOrders } = useStudentOrders(user?.id);
   const markAllAsRead = useMarkAllNotificationsAsRead();
+  const deleteNotification = useDeleteNotification();
 
-  const displayNotifications = useMemo(() => {
-    const list: Array<{ id: string; title: string; message: string; type: string; is_read: boolean; created_at: string }> = [];
+  // Local dismissed IDs for synthesized order notifications
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
-    // 1. Direct DB Notifications for user
+  const allNotifications = useMemo(() => {
+    const list: NotificationItem[] = [];
+
+    // 1. Real DB notifications
     if (dbNotifications && dbNotifications.length > 0) {
       dbNotifications.forEach((n) => {
         list.push({
@@ -69,11 +85,12 @@ export default function NotificationsScreen() {
           type: n.type || 'order',
           is_read: n.is_read,
           created_at: n.created_at,
+          isDbRecord: true,
         });
       });
     }
 
-    // 2. Synthesize dynamic notifications from student's real database orders
+    // 2. Synthesized notifications from student orders
     if (studentOrders && studentOrders.length > 0) {
       studentOrders.forEach((o) => {
         const orderShortId = `#CQ-${o.id.slice(0, 4).toUpperCase()}`;
@@ -85,6 +102,7 @@ export default function NotificationsScreen() {
             type: 'order',
             is_read: false,
             created_at: o.updated_at || o.created_at,
+            isDbRecord: false,
           });
         } else if (o.status === 'preparing') {
           list.push({
@@ -94,6 +112,7 @@ export default function NotificationsScreen() {
             type: 'order',
             is_read: false,
             created_at: o.updated_at || o.created_at,
+            isDbRecord: false,
           });
         } else if (o.status === 'pending') {
           list.push({
@@ -103,6 +122,7 @@ export default function NotificationsScreen() {
             type: 'order',
             is_read: true,
             created_at: o.created_at,
+            isDbRecord: false,
           });
         } else if (o.status === 'completed') {
           list.push({
@@ -112,14 +132,20 @@ export default function NotificationsScreen() {
             type: 'order',
             is_read: true,
             created_at: o.updated_at || o.created_at,
+            isDbRecord: false,
           });
         }
       });
     }
 
-    // Sort descending by timestamp
     return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [dbNotifications, studentOrders]);
+
+  // Filter out locally dismissed synthesized notifications
+  const displayNotifications = useMemo(
+    () => allNotifications.filter((n) => !dismissedIds.has(n.id)),
+    [allNotifications, dismissedIds]
+  );
 
   const unreadCount = useMemo(() => displayNotifications.filter((n) => !n.is_read).length, [displayNotifications]);
 
@@ -129,6 +155,32 @@ export default function NotificationsScreen() {
     } else {
       showSuccessToast('All notifications marked as read');
     }
+  };
+
+  const handleDelete = (item: NotificationItem) => {
+    Alert.alert(
+      'Delete Notification',
+      `Are you sure you want to delete "${item.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            if (item.isDbRecord) {
+              // Delete from database
+              deleteNotification.mutate(item.id, {
+                onSuccess: () => showSuccessToast('Notification deleted'),
+              });
+            } else {
+              // Dismiss locally (synthesized notifications only exist in-memory)
+              setDismissedIds((prev) => new Set([...prev, item.id]));
+              showSuccessToast('Notification dismissed');
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (isLoading && !user?.id) {
@@ -181,9 +233,11 @@ export default function NotificationsScreen() {
                 borderColor: !item.is_read ? 'rgba(255,102,0,0.3)' : colors.border,
                 opacity: item.is_read ? 0.85 : 1,
                 flexDirection: 'row',
+                alignItems: 'flex-start',
                 gap: 12,
               }}
             >
+              {/* Type icon */}
               <View
                 style={{
                   width: 40,
@@ -192,10 +246,13 @@ export default function NotificationsScreen() {
                   backgroundColor: `${accent}20`,
                   alignItems: 'center',
                   justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
                 <Icon color={accent} size={20} />
               </View>
+
+              {/* Content */}
               <View style={{ flex: 1, gap: 4 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text, flex: 1, paddingRight: 8 }}>
@@ -209,6 +266,24 @@ export default function NotificationsScreen() {
                   {item.message}
                 </Text>
               </View>
+
+              {/* Delete / Dismiss button — shown on every notification */}
+              <Pressable
+                onPress={() => handleDelete(item)}
+                style={({ pressed }) => ({
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  backgroundColor: pressed ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.08)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  marginLeft: 2,
+                })}
+                hitSlop={8}
+              >
+                <Trash2 color="#EF4444" size={15} />
+              </Pressable>
             </View>
           );
         }}

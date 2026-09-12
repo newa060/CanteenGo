@@ -3,6 +3,7 @@ import { FlatList, Image, Modal, Pressable, ScrollView, Text, TextInput, View } 
 import { useQueryClient } from '@tanstack/react-query';
 import { Bell, CheckCircle2, ChefHat, Menu as MenuIcon, Search, ShieldCheck, X } from 'lucide-react-native';
 import AdminDrawer from '../../components/AdminDrawer';
+import AdminNotificationPopover from '../../components/AdminNotificationPopover';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCanteenOrders, useUpdateOrder, useUpdateOrderStatus, ORDERS_QUERY_KEY } from '../../lib/hooks/useOrders';
@@ -229,56 +230,14 @@ export default function IndividualOrdersScreen() {
           style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: notifOpen ? 'rgba(255,102,0,0.2)' : isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
         >
           <Bell color={notifOpen ? '#FF6600' : colors.text} size={20} />
-          {displayNotifications.length > 0 && (
+          {(unreadNotifs || []).length > 0 && (
             <View style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF6600' }} />
           )}
         </Pressable>
       </View>
 
       {/* Notifications Popover */}
-      {notifOpen && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 96,
-            right: 16,
-            width: 300,
-            backgroundColor: colors.surface,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: 'rgba(255,102,0,0.3)',
-            zIndex: 50,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.3,
-            shadowRadius: 20,
-            elevation: 10,
-            overflow: 'hidden',
-          }}
-        >
-          <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: '#FF6600', fontSize: 11, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>Live Alerts</Text>
-            <Text style={{ color: colors.mutedText, fontSize: 9, fontWeight: '800' }}>{displayNotifications.length} NEW</Text>
-          </View>
-          <ScrollView style={{ maxHeight: 220 }}>
-            {displayNotifications.map((n) => (
-              <View key={n.id} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', gap: 10 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF6600', marginTop: 4 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.text }}>{n.title}</Text>
-                  <Text style={{ fontSize: 10, color: colors.subtext, marginTop: 2 }}>{n.desc}</Text>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-          <Pressable
-            onPress={() => setNotifOpen(false)}
-            style={{ padding: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}
-          >
-            <Text style={{ color: colors.mutedText, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' }}>Close</Text>
-          </Pressable>
-        </View>
-      )}
+      <AdminNotificationPopover visible={notifOpen} onClose={() => setNotifOpen(false)} />
 
       {/* Main Content */}
       <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>

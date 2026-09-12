@@ -10,6 +10,7 @@ import {
   Settings,
   UtensilsCrossed,
   X,
+  Bell,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 import { getThemeColors, useThemeStore } from '../store/themeStore';
@@ -171,6 +172,16 @@ export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
                       style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
                     />
                   </View>
+                  <Pressable
+                    onPress={() => {
+                      router.push('/(admin)/notifications');
+                      onClose();
+                    }}
+                    style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 8 }}
+                  >
+                    <Text style={{ color: colors.subtext, fontSize: 13 }}>Notifications & Alerts</Text>
+                    <Bell color="#FF6600" size={14} />
+                  </Pressable>
                   <Pressable style={{ paddingVertical: 12 }}>
                     <Text style={{ color: colors.subtext, fontSize: 13 }}>Privacy Policy</Text>
                   </Pressable>

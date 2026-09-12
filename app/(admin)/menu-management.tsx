@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Edit2, Plus, Search, Trash2, X } from 'lucide-react-native';
+import { ArrowLeft, Camera, Check, CheckCircle2, ChevronDown, Edit2, Plus, Search, Tag, Trash2, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
@@ -24,54 +24,6 @@ import { showSuccessToast, showErrorToast } from '../../lib/errorHandler';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { supabase } from '../../lib/supabase';
 
-const FALLBACK_CATEGORIES = ['Momo', 'Chowmein', 'Burger', 'More'];
-
-const FALLBACK_ITEMS = [
-  {
-    id: '1',
-    name: 'Steam Momo (10 pcs)',
-    category: 'MOMO',
-    category_id: 'cat-momo',
-    price: 'RS 120',
-    priceNum: 120,
-    available: true,
-    desc: 'Hand-crafted traditional dumplings served with spicy tomato sesame chutney.',
-    image: 'https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&auto=format&fit=crop&q=80',
-  },
-  {
-    id: '2',
-    name: 'Schezwan Noodles',
-    category: 'CHOWMEIN',
-    category_id: 'cat-chow',
-    price: 'RS 150',
-    priceNum: 150,
-    available: false,
-    desc: 'Fiery stir-fry noodles with szechuan peppercorns and garden vegetables.',
-    image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=600&auto=format&fit=crop&q=80',
-  },
-  {
-    id: '3',
-    name: 'Chilli Momo',
-    category: 'MOMO',
-    category_id: 'cat-momo',
-    price: 'RS 140',
-    priceNum: 140,
-    available: true,
-    desc: 'Deep-fried momos tossed in a house-special spicy chili garlic sauce.',
-    image: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=600&auto=format&fit=crop&q=80',
-  },
-  {
-    id: '4',
-    name: 'Operational Burger',
-    category: 'BURGER',
-    category_id: 'cat-burger',
-    price: 'RS 220',
-    priceNum: 220,
-    available: true,
-    desc: 'Flame-grilled premium patty with tactical-grade spicy mayo and pickles.',
-    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80',
-  },
-];
 
 type DisplayItem = {
   id: string;
@@ -92,6 +44,7 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
   const user = useAuthStore((s) => s.user);
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
+  const createCategory = useCreateCategory();
   const { data: dbCategories } = useCategories();
 
   const [name, setName] = useState(editItem?.name || '');
@@ -103,8 +56,10 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
   const [submitting, setSubmitting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [isCreatingCat, setIsCreatingCat] = useState(false);
 
-  // Re-populate form when editItem changes (e.g. opening edit for a different item)
+  // Re-populate form when editItem changes
   React.useEffect(() => {
     if (visible) {
       setName(editItem?.name || '');
@@ -113,6 +68,8 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
       setCategory(editItem?.category_id || '');
       setImageUri(editItem?.image || null);
       setAvailable(editItem ? editItem.available : true);
+      setShowCategoryPicker(false);
+      setNewCatName('');
     }
   }, [visible, editItem?.id]);
 
@@ -153,7 +110,6 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
     let finalImageUrl = editItem?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
 
     try {
-      // Upload image if a new one was picked (not an http URL)
       if (imageUri && !imageUri.startsWith('http')) {
         setUploadingImage(true);
         try {
@@ -170,12 +126,32 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
         finalImageUrl = imageUri;
       }
 
+      let canteenIdToUse = user?.canteen_id;
+      if (!canteenIdToUse) {
+        const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
+        if (canteens && canteens.length > 0) {
+          canteenIdToUse = canteens[0].id;
+        }
+      }
+
+      let categoryIdToUse = category;
+      if (!categoryIdToUse) {
+        if (dbCategories && dbCategories.length > 0) {
+          categoryIdToUse = dbCategories[0].id;
+        } else {
+          const createdCat = await createCategory.mutateAsync({
+            name: 'General',
+            canteen_id: canteenIdToUse || undefined,
+          });
+          categoryIdToUse = createdCat?.id || '';
+        }
+      }
+
       if (isEdit && editItem) {
-        // ——— EDIT MODE ———
         await updateProduct.mutateAsync({
           id: editItem.id,
           updates: {
-            category_id: category || undefined,
+            category_id: categoryIdToUse || undefined,
             name: name.trim(),
             description: desc.trim() || undefined,
             price: priceNum,
@@ -183,26 +159,16 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
             image_url: finalImageUrl,
           } as any,
         });
-        showSuccessToast('Item updated successfully!');
       } else {
-        // ——— CREATE MODE ———
-        let canteenIdToUse = user?.canteen_id;
-        if (!canteenIdToUse) {
-          const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
-          if (canteens && canteens.length > 0) {
-            canteenIdToUse = canteens[0].id;
-          }
-        }
         await createProduct.mutateAsync({
           canteen_id: canteenIdToUse || undefined,
-          category_id: category || undefined,
+          category_id: categoryIdToUse,
           name: name.trim(),
           description: desc.trim() || undefined,
           price: priceNum,
           is_available: available,
           image_url: finalImageUrl,
         });
-        showSuccessToast('Item added successfully!');
       }
 
       onClose();
@@ -213,195 +179,459 @@ function ProductModal({ visible, onClose, editItem }: { visible: boolean; onClos
     }
   };
 
+  const handleCreateCategory = async () => {
+    const trimmed = newCatName.trim();
+    if (!trimmed) {
+      showErrorToast('Please enter a category name');
+      return;
+    }
+    const existing = dbCategories?.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      setCategory(existing.id);
+      setNewCatName('');
+      setShowCategoryPicker(false);
+      showSuccessToast(`Selected "${existing.name}"`);
+      return;
+    }
+
+    setIsCreatingCat(true);
+    try {
+      let canteenIdToUse = user?.canteen_id;
+      if (!canteenIdToUse) {
+        const { data: canteens } = await supabase.from('canteens').select('id').limit(1);
+        if (canteens && canteens.length > 0) {
+          canteenIdToUse = canteens[0].id;
+        }
+      }
+      const created = await createCategory.mutateAsync({
+        name: trimmed,
+        canteen_id: canteenIdToUse || undefined,
+      });
+      if (created?.id) {
+        setCategory(created.id);
+      }
+      setNewCatName('');
+      setShowCategoryPicker(false);
+    } catch (e: any) {
+      showErrorToast(e?.message || 'Failed to add category');
+    } finally {
+      setIsCreatingCat(false);
+    }
+  };
+
   const selectedCategoryObj = dbCategories?.find((c) => c.id === category);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' }}>
-        {/* Full/Large Card Sheet */}
-        <View
-          style={{
-            height: '88%',
-            backgroundColor: colors.surface,
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-            borderWidth: 1,
-            borderColor: colors.border,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Modal Header */}
+    <>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
           <View
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 24,
-              paddingVertical: 18,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
+              height: '86%',
+              backgroundColor: colors.surface,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
             }}
           >
-            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>{isEdit ? 'Edit Item' : 'Add New Item'}</Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <X color={colors.text} size={20} />
-            </Pressable>
-          </View>
-
-          {/* Form Scroll Content */}
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 20, gap: 20 }}>
-            {/* Image Uploader */}
-            <Pressable
-              onPress={handlePickImage}
+            {/* Modal Header */}
+            <View
               style={{
-                borderWidth: 2,
-                borderColor: imageUri ? '#FF6600' : colors.border,
-                borderStyle: imageUri ? 'solid' : 'dashed',
-                borderRadius: 14,
-                height: 140,
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.background,
-                overflow: 'hidden',
+                justifyContent: 'space-between',
+                paddingHorizontal: 20,
+                paddingVertical: 18,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
               }}
             >
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-              ) : (
-                <View style={{ alignItems: 'center', gap: 8 }}>
-                  <Camera color="#FF6600" size={32} />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#FF6600', letterSpacing: 2, textTransform: 'uppercase' }}>
-                    Upload Item Photo
-                  </Text>
-                  <Text style={{ fontSize: 13, color: colors.subtext, textAlign: 'center' }}>
-                    Tap to select an image from gallery
-                  </Text>
-                </View>
-              )}
-            </Pressable>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>
+                {isEdit ? 'Edit Menu Item' : 'Add Menu Item'}
+              </Text>
+              <Pressable
+                onPress={onClose}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X color={colors.text} size={18} />
+              </Pressable>
+            </View>
 
-            {/* Form Fields */}
-            <View style={{ gap: 16 }}>
+            {/* Form Scroll Content */}
+            <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+              {/* Image Uploader */}
+              <Pressable
+                onPress={handlePickImage}
+                style={{
+                  borderWidth: 1,
+                  borderColor: imageUri ? colors.border : (isDarkMode ? 'rgba(255,255,255,0.12)' : '#E2E8F0'),
+                  borderStyle: imageUri ? 'solid' : 'dashed',
+                  borderRadius: 12,
+                  height: 120,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.background,
+                  overflow: 'hidden',
+                }}
+              >
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                ) : (
+                  <View style={{ alignItems: 'center', gap: 6 }}>
+                    <Camera color={colors.subtext} size={24} />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                      Add Item Photo
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.mutedText }}>
+                      Tap to select from device gallery
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+
               {/* Item Name */}
-              <View>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
-                  ITEM NAME
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.subtext }}>
+                  Item Name <Text style={{ color: '#FF6600' }}>*</Text>
                 </Text>
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="e.g., Gourmet Burger"
+                  placeholder="e.g. Steam Momo (10 pcs)"
                   placeholderTextColor={colors.mutedText}
-                  style={{ borderBottomWidth: 2, borderBottomColor: colors.border, paddingVertical: 10, fontSize: 16, color: colors.text, backgroundColor: 'transparent' }}
+                  style={{
+                    backgroundColor: colors.background,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    fontSize: 14,
+                    color: colors.text,
+                    fontWeight: '600',
+                  }}
                 />
               </View>
 
-              {/* Description */}
-              <View>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
-                  ITEM DESCRIPTION
+              {/* Item Description */}
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.subtext }}>
+                  Description (Optional)
                 </Text>
                 <TextInput
                   value={desc}
                   onChangeText={setDesc}
-                  placeholder="e.g., Flame-grilled beef patty with signature spicy mayo..."
+                  placeholder="Short description of ingredients or preparation..."
                   placeholderTextColor={colors.mutedText}
                   multiline
-                  numberOfLines={3}
-                  style={{ borderBottomWidth: 2, borderBottomColor: colors.border, paddingVertical: 10, fontSize: 15, color: colors.text, backgroundColor: 'transparent', height: 70, textAlignVertical: 'top' }}
+                  numberOfLines={2}
+                  style={{
+                    backgroundColor: colors.background,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    fontSize: 13,
+                    color: colors.text,
+                    minHeight: 60,
+                    textAlignVertical: 'top',
+                  }}
                 />
               </View>
 
-              {/* Category */}
-              <View>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
-                  CATEGORY
+              {/* Category Selector Tile */}
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.subtext }}>
+                  Category <Text style={{ color: '#FF6600' }}>*</Text>
                 </Text>
                 <Pressable
-                  onPress={() => setShowCategoryPicker(!showCategoryPicker)}
-                  style={{ flexDirection: 'row', borderBottomWidth: 2, borderBottomColor: colors.border, paddingVertical: 10, alignItems: 'center', justifyContent: 'space-between' }}
+                  onPress={() => setShowCategoryPicker(true)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: colors.background,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                  }}
                 >
-                  <Text style={{ fontSize: 16, color: selectedCategoryObj ? colors.text : colors.mutedText }}>
-                    {selectedCategoryObj ? selectedCategoryObj.name : 'Select category (Optional)'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Tag color={selectedCategoryObj ? '#FF6600' : colors.mutedText} size={16} />
+                    <Text style={{ fontSize: 14, fontWeight: selectedCategoryObj ? '700' : '400', color: selectedCategoryObj ? colors.text : colors.mutedText }}>
+                      {selectedCategoryObj ? selectedCategoryObj.name : 'Select Category'}
+                    </Text>
+                  </View>
                   <ChevronDown color={colors.subtext} size={18} />
                 </Pressable>
-                {showCategoryPicker && (
-                  <View style={{ backgroundColor: colors.background, borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: colors.border, paddingVertical: 4 }}>
-                    {(dbCategories || []).map((catObj) => (
-                      <Pressable
-                        key={catObj.id}
-                        onPress={() => {
-                          setCategory(catObj.id);
-                          setShowCategoryPicker(false);
-                        }}
-                        style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: category === catObj.id ? `${colors.primary}20` : 'transparent' }}
-                      >
-                        <Text style={{ color: category === catObj.id ? '#FF6600' : colors.text, fontWeight: category === catObj.id ? '700' : '400' }}>
-                          {catObj.name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
               </View>
 
               {/* Price */}
-              <View>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.mutedText, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
-                  PRICE (RS)
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.subtext }}>
+                  Price <Text style={{ color: '#FF6600' }}>*</Text>
                 </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 2, borderBottomColor: colors.border }}>
-                  <Text style={{ fontSize: 16, color: colors.subtext, marginRight: 8, fontWeight: '700' }}>RS</Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: colors.background,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FF6600', marginRight: 8 }}>
+                    रू
+                  </Text>
                   <TextInput
                     value={price}
                     onChangeText={setPrice}
-                    placeholder="150"
+                    placeholder="120"
                     placeholderTextColor={colors.mutedText}
                     keyboardType="numeric"
-                    style={{ flex: 1, paddingVertical: 10, fontSize: 16, color: colors.text, backgroundColor: 'transparent', fontWeight: '700' }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 12,
+                      fontSize: 15,
+                      color: colors.text,
+                      fontWeight: '700',
+                    }}
                   />
                 </View>
               </View>
-            </View>
 
-            {/* Availability Switch Card */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.background, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: available ? 'rgba(255,102,0,0.3)' : colors.border }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <CheckCircle2 color="#FF6600" size={22} />
+              {/* Available Switch */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: colors.background,
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
                 <View>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>Available</Text>
-                  <Text style={{ fontSize: 12, color: colors.subtext }}>Set item status as active</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
+                    Available for Order
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedText, marginTop: 2 }}>
+                    Show in active student menu
+                  </Text>
                 </View>
+                <Switch
+                  value={available}
+                  onValueChange={setAvailable}
+                  trackColor={{ false: '#353534', true: '#FF6600' }}
+                  thumbColor="#FFFFFF"
+                />
               </View>
-              <Switch value={available} onValueChange={setAvailable} trackColor={{ false: '#353534', true: '#FF6600' }} thumbColor="#FFFFFF" />
-            </View>
-          </ScrollView>
+            </ScrollView>
 
-          {/* Modal Footer Buttons */}
-          <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface }}>
-            <Pressable
-              onPress={onClose}
-              style={{ flex: 1, paddingVertical: 14, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}
+            {/* Modal Footer Buttons */}
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 12,
+                paddingHorizontal: 20,
+                paddingVertical: 16,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                backgroundColor: colors.surface,
+              }}
             >
-              <Text style={{ color: colors.text, fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>CANCEL</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSave}
-              disabled={submitting}
-              style={{ flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#FF6600', alignItems: 'center', shadowColor: '#FF6600', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6, opacity: submitting ? 0.6 : 1 }}
-            >
-              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' }}>
-                {submitting ? (uploadingImage ? 'UPLOADING...' : 'SAVING...') : 'SAVE ITEM'}
-              </Text>
-            </Pressable>
+              <Pressable
+                onPress={onClose}
+                style={{
+                  flex: 1,
+                  paddingVertical: 13,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSave}
+                disabled={submitting}
+                style={{
+                  flex: 1.4,
+                  paddingVertical: 13,
+                  borderRadius: 8,
+                  backgroundColor: '#FF6600',
+                  alignItems: 'center',
+                  opacity: submitting ? 0.7 : 1,
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
+                  {submitting ? (uploadingImage ? 'Uploading...' : 'Saving...') : 'Save Item'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* Clean Dedicated Category Picker Sheet */}
+      <Modal visible={showCategoryPicker} transparent animationType="fade" onRequestClose={() => setShowCategoryPicker(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              maxHeight: 460,
+              backgroundColor: colors.surface,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Header */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 18,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>Select Category</Text>
+              <Pressable onPress={() => setShowCategoryPicker(false)} style={{ padding: 4 }}>
+                <X color={colors.text} size={18} />
+              </Pressable>
+            </View>
+
+            {/* New Category Input Row */}
+            <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.background }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.subtext, marginBottom: 8 }}>
+                Add New Category
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={newCatName}
+                  onChangeText={setNewCatName}
+                  placeholder="e.g. Beverages, Snacks..."
+                  placeholderTextColor={colors.mutedText}
+                  style={{
+                    flex: 1,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    fontSize: 13,
+                    color: colors.text,
+                    fontWeight: '600',
+                  }}
+                />
+                <Pressable
+                  onPress={handleCreateCategory}
+                  disabled={isCreatingCat || !newCatName.trim()}
+                  style={{
+                    backgroundColor: '#FF6600',
+                    paddingHorizontal: 14,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: isCreatingCat || !newCatName.trim() ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                    {isCreatingCat ? '...' : 'Add'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Category List */}
+            <ScrollView style={{ maxHeight: 240 }} contentContainerStyle={{ padding: 8 }}>
+              {/* Option to clear category */}
+              <Pressable
+                onPress={() => {
+                  setCategory('');
+                  setShowCategoryPicker(false);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderRadius: 8,
+                  backgroundColor: !category ? (isDarkMode ? 'rgba(255,255,255,0.06)' : '#F1F5F9') : 'transparent',
+                }}
+              >
+                <Text style={{ fontSize: 13, color: !category ? '#FF6600' : colors.mutedText, fontWeight: !category ? '800' : '500' }}>
+                  None (No Category)
+                </Text>
+                {!category && <Check color="#FF6600" size={16} />}
+              </Pressable>
+
+              {/* List of DB categories */}
+              {(dbCategories || []).map((catObj) => {
+                const isSelected = category === catObj.id;
+                return (
+                  <Pressable
+                    key={catObj.id}
+                    onPress={() => {
+                      setCategory(catObj.id);
+                      setShowCategoryPicker(false);
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingHorizontal: 14,
+                      paddingVertical: 12,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? (isDarkMode ? 'rgba(255,102,0,0.15)' : '#FFF7ED') : 'transparent',
+                      marginTop: 2,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, color: isSelected ? '#FF6600' : colors.text, fontWeight: isSelected ? '800' : '500' }}>
+                      {catObj.name}
+                    </Text>
+                    {isSelected && <Check color="#FF6600" size={16} />}
+                  </Pressable>
+                );
+              })}
+
+              {(!dbCategories || dbCategories.length === 0) && (
+                <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedText, fontStyle: 'italic' }}>
+                    No categories created yet. Enter a name above to add one.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -452,7 +682,7 @@ export default function MenuManagementScreen() {
     if (dbCategories && dbCategories.length > 0) {
       return [{ id: 'all', name: 'All' }, ...dbCategories.map((c) => ({ id: c.id, name: c.name }))];
     }
-    return [{ id: 'all', name: 'All' }, ...FALLBACK_CATEGORIES.map((c) => ({ id: c.toLowerCase(), name: c }))];
+    return [{ id: 'all', name: 'All' }];
   }, [dbCategories]);
 
   const filteredItems = displayProducts.filter((item) => {
@@ -497,6 +727,10 @@ export default function MenuManagementScreen() {
       { text: 'Delete', style: 'destructive', onPress: () => deleteCategory.mutate(id) },
     ]);
   };
+
+  if (loadingProducts) {
+    return <LoadingScreen message="Loading menu items..." />;
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -643,36 +877,38 @@ export default function MenuManagementScreen() {
           )}
         </View>
 
-        {/* Categories Pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
-          {CATEGORIES.map((catObj) => {
-            const isActive = activeCat === catObj.id;
-            return (
-              <Pressable
-                key={catObj.id}
-                onPress={() => setActiveCat(catObj.id)}
-                style={{
-                  paddingHorizontal: 20,
-                  paddingVertical: 8,
-                  backgroundColor: isActive ? '#FF6600' : 'transparent',
-                  borderWidth: 1,
-                  borderColor: isActive ? '#FF6600' : colors.border,
-                  borderRadius: 4,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', color: isActive ? '#FFFFFF' : colors.subtext }}>
-                  {catObj.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* Categories Pills - only shown if categories exist */}
+        {CATEGORIES.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
+            {CATEGORIES.map((catObj) => {
+              const isActive = activeCat === catObj.id;
+              return (
+                <Pressable
+                  key={catObj.id}
+                  onPress={() => setActiveCat(catObj.id)}
+                  style={{
+                    paddingHorizontal: 20,
+                    paddingVertical: 8,
+                    backgroundColor: isActive ? '#FF6600' : 'transparent',
+                    borderWidth: 1,
+                    borderColor: isActive ? '#FF6600' : colors.border,
+                    borderRadius: 4,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', color: isActive ? '#FFFFFF' : colors.subtext }}>
+                    {catObj.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
 
         {/* Food Items */}
-        <View style={{ paddingHorizontal: 20, gap: 16 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: CATEGORIES.length > 1 ? 0 : 16, gap: 16 }}>
           {filteredItems.map((item) => (
             <View
               key={item.id}
@@ -710,9 +946,31 @@ export default function MenuManagementScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
-                      if (dbProducts && dbProducts.some((p) => p.id === item.id)) {
-                        deleteProduct.mutate(item.id);
-                      }
+                      Alert.alert(
+                        'Delete Item',
+                        `Are you sure you want to delete "${item.name}"?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await deleteProduct.mutateAsync(item.id);
+                              } catch (err: any) {
+                                if (
+                                  err?.message?.toLowerCase().includes('foreign key') ||
+                                  err?.message?.toLowerCase().includes('order_items') ||
+                                  err?.code === '23503'
+                                ) {
+                                  await toggleAvailability.mutateAsync({ id: item.id, isAvailable: false });
+                                  showErrorToast('Item has order history. Marked as unavailable instead of deleting.');
+                                }
+                              }
+                            },
+                          },
+                        ]
+                      );
                     }}
                     style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(19,19,19,0.75)', alignItems: 'center', justifyContent: 'center' }}
                   >
@@ -723,11 +981,13 @@ export default function MenuManagementScreen() {
 
               {/* Card Details */}
               <View style={{ padding: 16 }}>
-                <View style={{ borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 8, borderRadius: 2 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: item.available ? colors.subtext : colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                    {item.category}
-                  </Text>
-                </View>
+                {!!item.category && (
+                  <View style={{ borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 8, borderRadius: 2 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: item.available ? colors.subtext : colors.mutedText, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                      {item.category}
+                    </Text>
+                  </View>
+                )}
 
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                   <Text style={{ fontSize: 18, fontWeight: '700', color: item.available ? colors.text : colors.mutedText }}>{item.name}</Text>
