@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { OrderStatus } from '../types';
-import { showInfoToast, showSuccessToast } from './errorHandler';
+import { showInfoToast, showSuccessToast, showErrorToast } from './errorHandler';
 import { queryClient } from './queryClient';
 import { ORDERS_QUERY_KEY } from './hooks/useOrders';
 import { PRODUCTS_QUERY_KEY } from './hooks/useProducts';
@@ -56,7 +56,11 @@ export const realtimeService = {
               cancelled: 'Your order was cancelled.',
             };
             if (statusMessages[newStatus]) {
-              showSuccessToast(statusMessages[newStatus]);
+              if (newStatus === 'cancelled') {
+                showErrorToast(statusMessages[newStatus]);
+              } else {
+                showSuccessToast(statusMessages[newStatus]);
+              }
             }
           }
         }

@@ -65,9 +65,7 @@ export default function StudentProfileScreen() {
         <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden', marginBottom: 20, borderWidth: 1, borderColor: colors.border }}>
           <Pressable
             onPress={() => {
-              if (!user?.canteen_id) {
-                router.push('/(auth)/canteen-code');
-              }
+              router.push('/(auth)/canteen-code');
             }}
             style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}
           >
@@ -78,7 +76,11 @@ export default function StudentProfileScreen() {
                 {user?.canteen_code ? `Code: ${user.canteen_code}` : user?.canteen_id ? 'Main Hub Canteen' : 'Not Joined (Tap to connect)'}
               </Text>
             </View>
-            {!user?.canteen_id && (
+            {user?.canteen_id ? (
+              <View style={{ backgroundColor: 'rgba(255, 102, 0, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+                <Text style={{ color: '#FF6600', fontSize: 12, fontWeight: '700' }}>Change</Text>
+              </View>
+            ) : (
               <ChevronRight color="#FF6600" size={18} />
             )}
           </Pressable>

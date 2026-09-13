@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { Bell, CheckCircle2, AlertCircle, Gift, Trash2 } from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
@@ -133,6 +133,26 @@ export default function NotificationsScreen() {
             message: `Your order ${shortDisplay} (Rs. ${o.total_amount}) has been received.`,
             type: 'order', is_read: true,
             created_at: o.created_at,
+            isDbRecord: false,
+          });
+        } else if (o.status === 'completed') {
+          list.push({
+            id: `ord-comp-${o.id}`,
+            title: 'Order Completed',
+            message: `Your order ${shortDisplay} was picked up and completed. Thank you!`,
+            type: 'order',
+            is_read: true,
+            created_at: (o as any).updated_at || o.created_at,
+            isDbRecord: false,
+          });
+        } else if (o.status === 'cancelled') {
+          list.push({
+            id: `ord-canc-${o.id}`,
+            title: 'Order Cancelled',
+            message: `Your order ${shortDisplay} was cancelled.`,
+            type: 'system',
+            is_read: true,
+            created_at: (o as any).updated_at || o.created_at,
             isDbRecord: false,
           });
         }
