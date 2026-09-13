@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { Bell, CheckCircle2, AlertCircle, Gift, Trash2 } from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
@@ -32,19 +32,19 @@ const formatTime = (iso: string): string => {
 
 const getTypeIcon = (type: string) => {
   switch (type) {
-    case 'order': return CheckCircle2;
+    case 'order':  return CheckCircle2;
     case 'system': return AlertCircle;
-    case 'promo': return Gift;
-    default: return Bell;
+    case 'promo':  return Gift;
+    default:       return Bell;
   }
 };
 
 const getTypeColor = (type: string): string => {
   switch (type) {
-    case 'order': return '#10B981';
+    case 'order':  return '#10B981';
     case 'system': return '#FF6600';
-    case 'promo': return '#8B5CF6';
-    default: return '#64748B';
+    case 'promo':  return '#8B5CF6';
+    default:       return '#64748B';
   }
 };
 
@@ -55,7 +55,6 @@ type NotificationItem = {
   type: string;
   is_read: boolean;
   created_at: string;
-  /** true = stored in DB (call API to delete); false = synthesized locally (dismiss from state) */
   isDbRecord: boolean;
 };
 
@@ -69,8 +68,16 @@ export default function NotificationsScreen() {
   const markAllAsRead = useMarkAllNotificationsAsRead();
   const deleteNotification = useDeleteNotification();
 
-  // Local dismissed IDs for synthesized order notifications
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  // Auto-mark all DB notifications as read when the screen opens
+  const markedRef = useRef(false);
+  useEffect(() => {
+    if (user?.id && dbNotifications && dbNotifications.some((n) => !n.is_read) && !markedRef.current) {
+      markedRef.current = true;
+      markAllAsRead.mutate(user.id);
+    }
+  }, [user?.id, dbNotifications]);
 
   const allNotifications = useMemo(() => {
     const list: NotificationItem[] = [];
@@ -90,97 +97,88 @@ export default function NotificationsScreen() {
       });
     }
 
-    // 2. Synthesized notifications from student orders
+    // 2. Synthesized only for orders not already covered by a DB notification
     if (studentOrders && studentOrders.length > 0) {
+      const dbMessages = (dbNotifications || []).map((n) => n.message);
+
       studentOrders.forEach((o) => {
-        const orderShortId = `#CQ-${o.id.slice(0, 4).toUpperCase()}`;
+        const orderShortId = o.id.slice(0, 8);
+        const alreadyCovered = dbMessages.some((msg) => msg.includes(orderShortId));
+        if (alreadyCovered) return;
+
+        const shortDisplay = `#CQ-${o.id.slice(0, 4).toUpperCase()}`;
+
         if (o.status === 'ready') {
           list.push({
             id: `ord-ready-${o.id}`,
             title: 'Order Ready for Pickup!',
-            message: `Your order ${orderShortId} is READY! Pickup code: ${o.pickup_code || ''}`,
-            type: 'order',
-            is_read: false,
-            created_at: o.updated_at || o.created_at,
+            message: `Your order ${shortDisplay} is READY! Pickup code: ${(o as any).pickup_code || ''}`,
+            type: 'order', is_read: false,
+            created_at: (o as any).updated_at || o.created_at,
             isDbRecord: false,
           });
         } else if (o.status === 'preparing') {
           list.push({
             id: `ord-prep-${o.id}`,
-            title: 'Order Preparing',
-            message: `Your order ${orderShortId} is being prepared in the kitchen.`,
-            type: 'order',
-            is_read: false,
-            created_at: o.updated_at || o.created_at,
+            title: 'Order Accepted & Preparing',
+            message: `Your order ${shortDisplay} has been accepted and is being prepared.`,
+            type: 'order', is_read: false,
+            created_at: (o as any).updated_at || o.created_at,
             isDbRecord: false,
           });
         } else if (o.status === 'pending') {
           list.push({
             id: `ord-pend-${o.id}`,
             title: 'Order Placed',
-            message: `Your order ${orderShortId} (रू ${o.total_amount}) has been received.`,
-            type: 'order',
-            is_read: true,
+            message: `Your order ${shortDisplay} (Rs. ${o.total_amount}) has been received.`,
+            type: 'order', is_read: true,
             created_at: o.created_at,
-            isDbRecord: false,
-          });
-        } else if (o.status === 'completed') {
-          list.push({
-            id: `ord-comp-${o.id}`,
-            title: 'Order Completed',
-            message: `Your order ${orderShortId} was picked up and completed. Thank you!`,
-            type: 'order',
-            is_read: true,
-            created_at: o.updated_at || o.created_at,
             isDbRecord: false,
           });
         }
       });
     }
 
-    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [dbNotifications, studentOrders]);
+    return list
+      .filter((n) => !dismissedIds.has(n.id))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [dbNotifications, studentOrders, dismissedIds]);
 
-  // Filter out locally dismissed synthesized notifications
-  const displayNotifications = useMemo(
-    () => allNotifications.filter((n) => !dismissedIds.has(n.id)),
-    [allNotifications, dismissedIds]
+  const unreadCount = useMemo(
+    () => allNotifications.filter((n) => !n.is_read).length,
+    [allNotifications],
   );
 
-  const unreadCount = useMemo(() => displayNotifications.filter((n) => !n.is_read).length, [displayNotifications]);
-
   const handleMarkAll = () => {
-    if (user?.id) {
-      markAllAsRead.mutate(user.id);
-    } else {
-      showSuccessToast('All notifications marked as read');
-    }
+    if (user?.id) markAllAsRead.mutate(user.id);
   };
 
   const handleDelete = (item: NotificationItem) => {
-    Alert.alert(
-      'Delete Notification',
-      `Are you sure you want to delete "${item.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (item.isDbRecord) {
-              // Delete from database
-              deleteNotification.mutate(item.id, {
-                onSuccess: () => showSuccessToast('Notification deleted'),
-              });
-            } else {
-              // Dismiss locally (synthesized notifications only exist in-memory)
-              setDismissedIds((prev) => new Set([...prev, item.id]));
-              showSuccessToast('Notification dismissed');
-            }
-          },
-        },
-      ]
-    );
+    const doDelete = () => {
+      if (item.isDbRecord) {
+        deleteNotification.mutate(item.id, {
+          onSuccess: () => showSuccessToast('Notification deleted'),
+        });
+      } else {
+        setDismissedIds((prev) => new Set([...prev, item.id]));
+        showSuccessToast('Notification dismissed');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      // Alert.alert does not work on Expo web
+      if (window.confirm(`Delete "${item.title}"?`)) doDelete();
+    } else {
+      Alert.alert(
+        'Delete Notification',
+        `Delete "${item.title}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: doDelete },
+        ],
+        { cancelable: true },
+      );
+    }
   };
 
   if (isLoading && !user?.id) {
@@ -210,18 +208,18 @@ export default function NotificationsScreen() {
           </Text>
         </View>
         {unreadCount > 0 && (
-          <Pressable onPress={handleMarkAll}>
+          <Pressable onPress={handleMarkAll} hitSlop={8}>
             <Text style={{ fontSize: 12, fontWeight: '800', color: '#FF6600' }}>Mark All Read</Text>
           </Pressable>
         )}
       </View>
 
       <FlatList
-        data={displayNotifications}
+        data={allNotifications}
         keyExtractor={(n) => n.id}
         contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: 100 }}
         renderItem={({ item }) => {
-          const Icon = getTypeIcon(item.type);
+          const Icon   = getTypeIcon(item.type);
           const accent = getTypeColor(item.type);
           return (
             <View
@@ -240,13 +238,9 @@ export default function NotificationsScreen() {
               {/* Type icon */}
               <View
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
+                  width: 40, height: 40, borderRadius: 20,
                   backgroundColor: `${accent}20`,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
                 <Icon color={accent} size={20} />
@@ -267,20 +261,16 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
 
-              {/* Delete / Dismiss button — shown on every notification */}
+              {/* Delete / Dismiss */}
               <Pressable
                 onPress={() => handleDelete(item)}
-                style={({ pressed }) => ({
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  backgroundColor: pressed ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.08)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  marginLeft: 2,
-                })}
                 hitSlop={8}
+                style={({ pressed }) => ({
+                  width: 32, height: 32, borderRadius: 8,
+                  backgroundColor: pressed ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.08)',
+                  alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, marginLeft: 2,
+                })}
               >
                 <Trash2 color="#EF4444" size={15} />
               </Pressable>

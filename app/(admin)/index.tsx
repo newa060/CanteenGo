@@ -6,7 +6,7 @@ import AdminDrawer from '../../components/AdminDrawer';
 import AdminNotificationPopover from '../../components/AdminNotificationPopover';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { useCanteenOrders, useUpdateOrder, useUpdateOrderStatus, ORDERS_QUERY_KEY } from '../../lib/hooks/useOrders';
+import { useCanteenOrders, useUpdateOrder, useUpdateOrderStatus, ORDERS_QUERY_KEY, createAdminSelfNotification } from '../../lib/hooks/useOrders';
 import { orderRepository } from '../../lib/repositories/orderRepository';
 import { useNotifications } from '../../lib/hooks/useNotifications';
 import { useCanteen } from '../../lib/hooks/useCanteen';
@@ -87,6 +87,14 @@ export default function IndividualOrdersScreen() {
             items: 1,
           });
           showInfoToast('New order received! 🔔');
+          // Create DB notification for admin (self-insert is allowed by RLS)
+          if (user?.id) {
+            createAdminSelfNotification(
+              user.id,
+              'New Order Received 🔔',
+              `${order?.student_name || 'A student'} placed order #${(order?.id || '').slice(0, 8)} for रू ${(order?.total_amount ?? 0).toFixed(0)}.`
+            );
+          }
         }
       )
       .subscribe();

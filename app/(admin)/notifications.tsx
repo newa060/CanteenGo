@@ -1,8 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Platform, Pressable, Text, View } from 'react-native';
+﻿import React, { useMemo, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Bell, Check, CheckCheck, Menu as MenuIcon, Trash2 } from 'lucide-react-native';
-import AdminDrawer from '../../components/AdminDrawer';
+import {
+  ArrowLeft,
+  Bell,
+  CheckCheck,
+  CheckCircle2,
+  AlertCircle,
+  Package,
+  Trash2,
+} from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -13,6 +20,7 @@ import {
 } from '../../lib/hooks/useNotifications';
 import { showSuccessToast } from '../../lib/errorHandler';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
+import { Tables } from '../../types/database';
 
 const formatTime = (iso: string): string => {
   try {
@@ -32,62 +40,71 @@ const formatTime = (iso: string): string => {
   }
 };
 
+const getTypeIcon = (type: string | null) => {
+  switch (type) {
+    case 'order':  return CheckCircle2;
+    case 'system': return AlertCircle;
+    case 'promo':  return Package;
+    default:       return Bell;
+  }
+};
+
+const getTypeColor = (type: string | null): string => {
+  switch (type) {
+    case 'order':  return '#10B981';
+    case 'system': return '#FF6600';
+    case 'promo':  return '#8B5CF6';
+    default:       return '#FF6600';
+  }
+};
+
 export default function AdminNotificationsScreen() {
   const router = useRouter();
   const { isDarkMode } = useThemeStore();
   const colors = getThemeColors(isDarkMode);
   const user = useAuthStore((s) => s.user);
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   const { data: rawNotifs, isLoading } = useNotifications(user?.id, true);
-  const markAsRead = useMarkNotificationAsRead();
+  const markAsRead    = useMarkNotificationAsRead();
   const markAllAsRead = useMarkAllNotificationsAsRead();
-  const deleteNotification = useDeleteNotification();
+  const deleteNotif   = useDeleteNotification();
 
   const notifications = useMemo(() => {
     const list = rawNotifs || [];
-    if (filter === 'unread') {
-      return list.filter((n) => !n.is_read);
-    }
-    return list;
+    return filter === 'unread' ? list.filter((n) => !n.is_read) : list;
   }, [rawNotifs, filter]);
 
-  const unreadCount = useMemo(() => (rawNotifs || []).filter((n) => !n.is_read).length, [rawNotifs]);
+  const unreadCount = useMemo(
+    () => (rawNotifs || []).filter((n) => !n.is_read).length,
+    [rawNotifs],
+  );
 
   const handleMarkRead = (id: string) => {
-    markAsRead.mutate(id, {
-      onSuccess: () => showSuccessToast('Marked as read'),
-    });
+    markAsRead.mutate(id, { onSuccess: () => showSuccessToast('Marked as read') });
   };
 
   const handleMarkAllRead = () => {
-    if (user?.id) {
-      markAllAsRead.mutate(user.id);
-    }
+    if (user?.id) markAllAsRead.mutate(user.id);
   };
 
-  const confirmDelete = (id: string, title: string) => {
+  const handleDelete = (item: Tables<'notifications'>) => {
     const doDelete = () => {
-      deleteNotification.mutate(id, {
-        onSuccess: () => showSuccessToast('Notification deleted'),
-      });
-      setDeleteTarget(null);
+      deleteNotif.mutate(item.id, { onSuccess: () => showSuccessToast('Notification deleted') });
     };
-
     if (Platform.OS === 'web') {
-      setDeleteTarget({ id, title });
+      // eslint-disable-next-line no-restricted-globals
+      if (confirm(`Delete "${item.title}"?`)) doDelete();
     } else {
       Alert.alert(
         'Delete Notification',
-        `Are you sure you want to delete "${title}"?`,
+        `Delete "${item.title}"?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Delete', style: 'destructive', onPress: doDelete },
         ],
-        { cancelable: true }
+        { cancelable: true },
       );
     }
   };
@@ -98,17 +115,16 @@ export default function AdminNotificationsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <AdminDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
-      {/* Top Header */}
+      {/* Header */}
       <View
         style={{
-          paddingTop: 48,
+          paddingTop: 52,
           paddingHorizontal: 16,
           paddingBottom: 14,
           backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: isDarkMode ? 'rgba(255, 102, 0, 0.2)' : colors.border,
+          borderBottomColor: isDarkMode ? 'rgba(255,102,0,0.2)' : colors.border,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -118,12 +134,9 @@ export default function AdminNotificationsScreen() {
           <Pressable
             onPress={() => router.back()}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: 36, height: 36, borderRadius: 8,
+              backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : '#F1F5F9',
+              alignItems: 'center', justifyContent: 'center',
             }}
           >
             <ArrowLeft color={colors.text} size={20} />
@@ -133,7 +146,7 @@ export default function AdminNotificationsScreen() {
               Notifications & Alerts
             </Text>
             <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-              {unreadCount > 0 ? `${unreadCount} UNREAD ALERTS` : 'ALL CAUGHT UP'}
+              {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
             </Text>
           </View>
         </View>
@@ -142,209 +155,117 @@ export default function AdminNotificationsScreen() {
           <Pressable
             onPress={handleMarkAllRead}
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
+              flexDirection: 'row', alignItems: 'center', gap: 6,
               backgroundColor: 'rgba(255,102,0,0.1)',
-              borderWidth: 1,
-              borderColor: 'rgba(255,102,0,0.3)',
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: 8,
+              borderWidth: 1, borderColor: 'rgba(255,102,0,0.3)',
+              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
             }}
           >
             <CheckCheck color="#FF6600" size={14} />
-            <Text style={{ color: '#FF6600', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>MARK ALL READ</Text>
+            <Text style={{ color: '#FF6600', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>
+              MARK ALL READ
+            </Text>
           </Pressable>
         )}
       </View>
 
-      {/* Filter Tabs */}
+      {/* Filter tabs */}
       <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, flexDirection: 'row', gap: 8 }}>
-        <Pressable
-          onPress={() => setFilter('all')}
-          style={{
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            borderRadius: 8,
-            backgroundColor: filter === 'all' ? '#FF6600' : colors.surface,
-            borderWidth: 1,
-            borderColor: filter === 'all' ? '#FF6600' : colors.border,
-          }}
-        >
-          <Text style={{ fontSize: 11, fontWeight: '800', color: filter === 'all' ? '#FFFFFF' : colors.text }}>
-            ALL ({rawNotifs?.length || 0})
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => setFilter('unread')}
-          style={{
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            borderRadius: 8,
-            backgroundColor: filter === 'unread' ? '#FF6600' : colors.surface,
-            borderWidth: 1,
-            borderColor: filter === 'unread' ? '#FF6600' : colors.border,
-          }}
-        >
-          <Text style={{ fontSize: 11, fontWeight: '800', color: filter === 'unread' ? '#FFFFFF' : colors.text }}>
-            UNREAD ({unreadCount})
-          </Text>
-        </Pressable>
+        {(['all', 'unread'] as const).map((f) => (
+          <Pressable
+            key={f}
+            onPress={() => setFilter(f)}
+            style={{
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+              backgroundColor: filter === f ? '#FF6600' : colors.surface,
+              borderWidth: 1, borderColor: filter === f ? '#FF6600' : colors.border,
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '800', color: filter === f ? '#FFFFFF' : colors.text }}>
+              {f === 'all' ? `ALL (${rawNotifs?.length || 0})` : `UNREAD (${unreadCount})`}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
-      {/* Notification List */}
+      {/* List */}
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }}
-        renderItem={({ item }) => (
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 14,
-              padding: 16,
-              borderWidth: 1,
-              borderColor: !item.is_read ? 'rgba(255,102,0,0.3)' : colors.border,
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              gap: 12,
-            }}
-          >
-            {/* Status Indicator / Icon */}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 120 }}
+        renderItem={({ item }) => {
+          const Icon   = getTypeIcon(item.type);
+          const accent = getTypeColor(item.type);
+          return (
             <View
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: !item.is_read ? 'rgba(255,102,0,0.15)' : (isDarkMode ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+                backgroundColor: colors.surface,
+                borderRadius: 16, padding: 16,
+                borderWidth: 1,
+                borderColor: !item.is_read ? 'rgba(255,102,0,0.3)' : colors.border,
+                opacity: item.is_read ? 0.88 : 1,
+                flexDirection: 'row', alignItems: 'flex-start', gap: 12,
               }}
             >
-              <Bell color={!item.is_read ? '#FF6600' : colors.mutedText} size={18} />
-            </View>
-
-            {/* Message text */}
-            <View style={{ flex: 1, gap: 4 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text, flex: 1, paddingRight: 8 }}>
-                  {item.title}
-                </Text>
-                <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '600' }}>
-                  {formatTime(item.created_at)}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 12, color: colors.subtext, lineHeight: 17 }}>
-                {item.message}
-              </Text>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              {!item.is_read && (
-                <Pressable
-                  onPress={() => handleMarkRead(item.id)}
-                  hitSlop={8}
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
-                  }}
-                >
-                  <Check color="#FF6600" size={16} />
-                </Pressable>
-              )}
+              {/* Type icon — tap to mark read */}
               <Pressable
-                onPress={() => confirmDelete(item.id, item.title)}
-                hitSlop={8}
+                onPress={() => !item.is_read && handleMarkRead(item.id)}
                 style={{
-                  padding: 8,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(239,68,68,0.1)',
+                  width: 40, height: 40, borderRadius: 20,
+                  backgroundColor: `${accent}20`,
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
+              >
+                <Icon color={accent} size={20} />
+              </Pressable>
+
+              {/* Content */}
+              <View style={{ flex: 1, gap: 3 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text, flex: 1, paddingRight: 8 }}>
+                    {item.title}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedText, fontWeight: '600', flexShrink: 0 }}>
+                    {formatTime(item.created_at)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.subtext, lineHeight: 17 }}>
+                  {item.message}
+                </Text>
+                {!item.is_read && (
+                  <Pressable onPress={() => handleMarkRead(item.id)} style={{ marginTop: 4, alignSelf: 'flex-start' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#FF6600' }}>Mark as read</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Delete — always visible */}
+              <Pressable
+                onPress={() => handleDelete(item)}
+                hitSlop={8}
+                style={({ pressed }) => ({
+                  width: 32, height: 32, borderRadius: 8,
+                  backgroundColor: pressed ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.09)',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                })}
               >
                 <Trash2 color="#EF4444" size={16} />
               </Pressable>
             </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={
           <View style={{ paddingVertical: 60, alignItems: 'center', gap: 10 }}>
             <Bell color={colors.mutedText} size={48} style={{ opacity: 0.35 }} />
             <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>No notifications found</Text>
             <Text style={{ fontSize: 12, color: colors.mutedText, textAlign: 'center' }}>
-              {filter === 'unread' ? 'You have read all your notifications.' : 'New orders and alerts will appear here.'}
+              {filter === 'unread'
+                ? 'You have read all your notifications.'
+                : 'New orders and alerts will appear here.'}
             </Text>
           </View>
         }
       />
-
-      {/* Confirmation Modal for Web fallback */}
-      {deleteTarget && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 20,
-              zIndex: 999,
-            }}
-          >
-            <View
-              style={{
-                width: '100%',
-                maxWidth: 340,
-                backgroundColor: colors.surface,
-                borderRadius: 14,
-                padding: 20,
-                borderWidth: 1,
-                borderColor: colors.border,
-                gap: 14,
-              }}
-            >
-              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.text }}>Delete Notification</Text>
-              <Text style={{ fontSize: 13, color: colors.subtext, lineHeight: 18 }}>
-                Are you sure you want to delete "{deleteTarget.title}"? This action cannot be undone.
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-                <Pressable
-                  onPress={() => setDeleteTarget(null)}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Text style={{ color: colors.text, fontSize: 12, fontWeight: '700' }}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    deleteNotification.mutate(deleteTarget.id, {
-                      onSuccess: () => showSuccessToast('Notification deleted'),
-                    });
-                    setDeleteTarget(null);
-                  }}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 8,
-                    backgroundColor: '#EF4444',
-                  }}
-                >
-                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>Delete</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
     </View>
   );
 }

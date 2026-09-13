@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import React, { useEffect } from 'react';
-import { PackageOpen, QrCode, ReceiptText } from 'lucide-react-native';
+import { PackageOpen, QrCode, ReceiptText, ClipboardList } from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { realtimeService } from '../../lib/realtimeService';
@@ -65,6 +65,13 @@ export default function AdminLayout() {
         options={{
           title: 'Bulk Orders',
           tabBarIcon: ({ color, size }) => <PackageOpen color={color} size={size || 22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'History',
+          tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size || 22} />,
         }}
       />
       <Tabs.Screen

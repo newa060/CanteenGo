@@ -78,7 +78,9 @@ export const pushNotificationService = {
     const messages: Record<string, { title: string; body: string }> = {
       confirmed: { title: '✅ Order Confirmed!', body: 'Your order has been confirmed by the canteen.' },
       preparing: { title: '✅ Order Accepted!', body: 'Your order has been accepted and is now being prepared.' },
+      ready: { title: '🍽️ Food Ready for Pickup!', body: `Your order is ready! ${pickupCode ? `Pickup code: ${pickupCode}` : 'Show your QR code at the counter.'}` },
       cancelled: { title: '❌ Order Rejected', body: 'Your order was rejected by the canteen. Please contact them for details.' },
+      completed: { title: '✅ Order Completed!', body: 'Your order has been picked up. Thank you for using CanteenGo!' },
     };
 
     const msg = messages[status];

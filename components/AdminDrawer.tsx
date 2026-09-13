@@ -5,6 +5,7 @@ import {
   ChefHat,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   LogOut,
   QrCode,
   Settings,
@@ -36,6 +37,12 @@ export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
       label: 'Menu Management',
       icon: UtensilsCrossed,
       route: '/(admin)/menu-management',
+    },
+    {
+      key: 'history',
+      label: 'Order History',
+      icon: ClipboardList,
+      route: '/(admin)/history',
     },
     {
       key: 'settings',

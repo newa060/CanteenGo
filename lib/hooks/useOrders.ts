@@ -102,35 +102,53 @@ export const useUpdateOrderStatus = () => {
       queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
       showSuccessToast(`Order ${data.status}`);
 
-      // Create DB Notification for Student — only on accepted or rejected
-      if (data.student_id && (data.status === 'preparing' || data.status === 'cancelled')) {
-        const statusMsgMap: Record<string, { title: string; message: string }> = {
-          preparing: {
-            title: 'Order Accepted! 🎉',
-            message: `Your order #${data.id.slice(0, 8)} has been accepted and is now being prepared!`,
-          },
-          cancelled: {
-            title: 'Order Rejected ❌',
-            message: `Your order #${data.id.slice(0, 8)} was rejected by the canteen.`,
-          },
-        };
+      // Create DB Notification for Student based on status
+      const statusMsgMap: Record<string, { title: string; message: string }> = {
+        preparing: {
+          title: 'Order Accepted! 🎉',
+          message: `Your order #${data.id.slice(0, 8)} has been accepted and is now being prepared!`,
+        },
+        ready: {
+          title: '🍽️ Food Ready for Pickup!',
+          message: `Your order #${data.id.slice(0, 8)} is ready! Show your pickup code at the counter.`,
+        },
+        cancelled: {
+          title: 'Order Rejected ❌',
+          message: `Your order #${data.id.slice(0, 8)} was rejected by the canteen.`,
+        },
+        completed: {
+          title: 'Order Completed ✅',
+          message: `Your order #${data.id.slice(0, 8)} has been picked up. Thank you!`,
+        },
+      };
+
+      if (data.student_id && statusMsgMap[data.status]) {
         const notif = statusMsgMap[data.status];
-        if (notif) {
-          notificationRepository.create({
-            user_id: data.student_id,
-            title: notif.title,
-            message: notif.message,
-            type: 'order',
-          }).catch(() => {});
-        }
+        notificationRepository.create({
+          user_id: data.student_id,
+          title: notif.title,
+          message: notif.message,
+          type: 'order',
+        }).catch(() => {});
       }
 
-      // Send device push notification to student — only accepted or rejected
-      if (data.status === 'preparing' || data.status === 'cancelled') {
+      // Send local push notification to student device
+      if (data.status === 'preparing' || data.status === 'cancelled' || data.status === 'ready') {
         pushNotificationService.notifyOrderStatusChange(data.status, (data as any).pickup_code);
       }
     },
   });
+};
+
+/** Helper: create a notification for the currently-logged-in admin user.
+ *  Because this is called from an admin session, RLS allows self-insert. */
+export const createAdminSelfNotification = (adminUserId: string, title: string, message: string) => {
+  return notificationRepository.create({
+    user_id: adminUserId,
+    title,
+    message,
+    type: 'order',
+  }).catch(() => {});
 };
 
 export const useUpdateOrder = () => {

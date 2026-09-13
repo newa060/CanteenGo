@@ -6,7 +6,7 @@ import AdminDrawer from '../../components/AdminDrawer';
 import AdminNotificationPopover from '../../components/AdminNotificationPopover';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { useCanteenOrders, ORDERS_QUERY_KEY } from '../../lib/hooks/useOrders';
+import { useCanteenOrders, useUpdateOrderStatus, ORDERS_QUERY_KEY } from '../../lib/hooks/useOrders';
 import { useNotifications } from '../../lib/hooks/useNotifications';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { showSuccessToast, showInfoToast } from '../../lib/errorHandler';
@@ -98,6 +98,7 @@ export default function BulkOrdersScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const { data: rawNotifs } = useNotifications(user?.id, false);
+  const updateStatus = useUpdateOrderStatus();
 
   const handleIncrement = (itemKey: string, maxQty: number) => {
     setSelectedQuantities((prev) => {
@@ -138,21 +139,39 @@ export default function BulkOrdersScreen() {
     }
   };
 
-  // Mark done handler
+  // Mark done handler — deducts locally AND marks fully-done orders as 'ready'
   const handleMarkDone = (itemKey: string, itemName: string, amountToDeduct: number, totalRemaining: number) => {
     // If no quantity was explicitly dialed in, default to completing all remaining for convenience
     const qty = amountToDeduct > 0 ? amountToDeduct : totalRemaining;
     if (qty <= 0) return;
 
-    setCompletedDeductions((prev) => ({
-      ...prev,
-      [itemKey]: (prev[itemKey] || 0) + qty,
-    }));
+    const newDeductions = { ...completedDeductions, [itemKey]: (completedDeductions[itemKey] || 0) + qty };
+    setCompletedDeductions(newDeductions);
     setSelectedQuantities((prev) => ({
       ...prev,
       [itemKey]: 0,
     }));
     showSuccessToast(`Marked ${qty}x ${itemName} as prepared! 🍳`);
+
+    // Check if any preparing order is now fully cooked (all its items have been deducted)
+    preparingOrders.forEach((order: any) => {
+      const oItems: any[] = order.order_items || [];
+      if (oItems.length === 0) return;
+
+      const allDone = oItems.every((it: any) => {
+        const name = it?.products?.name || 'Unknown Item';
+        const needed = it.quantity || 1;
+        const deducted = name === itemKey
+          ? (newDeductions[name] || 0)
+          : (newDeductions[name] || 0);
+        return deducted >= needed;
+      });
+
+      if (allDone) {
+        // Transition order to 'ready' so student gets notified
+        updateStatus.mutate({ orderId: order.id, status: 'ready' });
+      }
+    });
   };
 
   if (isLoading && !orders.length) {
