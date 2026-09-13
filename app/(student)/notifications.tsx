@@ -134,6 +134,16 @@ export default function NotificationsScreen() {
             created_at: o.updated_at || o.created_at,
             isDbRecord: false,
           });
+        } else if (o.status === 'cancelled') {
+          list.push({
+            id: `ord-canc-${o.id}`,
+            title: 'Order Cancelled',
+            message: `Your order ${orderShortId} was cancelled.`,
+            type: 'system',
+            is_read: true,
+            created_at: o.updated_at || o.created_at,
+            isDbRecord: false,
+          });
         }
       });
     }

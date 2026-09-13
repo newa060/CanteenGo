@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderRepository, CreateOrderData } from '../repositories/orderRepository';
 import { UpdateTables } from '../../types/database';
 import { OrderStatus } from '../../types';
-import { showSuccessToast } from '../errorHandler';
+import { showSuccessToast, showErrorToast } from '../errorHandler';
 import { pushNotificationService } from '../pushNotificationService';
 import { notificationRepository } from '../repositories/notificationRepository';
 import { supabase } from '../supabase';
@@ -100,7 +100,11 @@ export const useUpdateOrderStatus = () => {
     onSuccess: (data) => {
       queryClient.setQueryData([ORDER_QUERY_KEY, data.id], data);
       queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
-      showSuccessToast(`Order ${data.status}`);
+      if (data.status === 'cancelled') {
+        showErrorToast('Order cancelled');
+      } else {
+        showSuccessToast(`Order ${data.status}`);
+      }
 
       // Create DB Notification for Student — only on accepted or rejected
       if (data.student_id && (data.status === 'preparing' || data.status === 'cancelled')) {

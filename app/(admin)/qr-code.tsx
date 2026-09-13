@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { useCanteen } from '../../lib/hooks/useCanteen';
+import { useCanteen, useUpdateCanteen } from '../../lib/hooks/useCanteen';
 import { showSuccessToast } from '../../lib/errorHandler';
 
 export default function QRManagementScreen() {
@@ -16,9 +16,21 @@ export default function QRManagementScreen() {
   const canteenId = user?.canteen_id || null;
 
   const { data: canteen, isLoading, refetch } = useCanteen(canteenId);
+  const updateCanteen = useUpdateCanteen();
 
   const canteenCode = canteen?.code ?? '';
   const canteenName = canteen?.name ?? 'Your Canteen';
+
+  React.useEffect(() => {
+    if (canteen && canteen.code && canteen.code.length > 6) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let newCode = '';
+      for (let i = 0; i < 6; i++) {
+        newCode += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      updateCanteen.mutate({ id: canteen.id, updates: { code: newCode } as any });
+    }
+  }, [canteen]);
 
   const handleShare = async () => {
     try {
