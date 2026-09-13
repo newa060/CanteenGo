@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   ChefHat,
@@ -30,6 +30,24 @@ export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
   const colors = getThemeColors(isDarkMode);
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out from your current account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            onClose();
+            await logout();
+          },
+        },
+      ]
+    );
+  };
 
   const navItems = [
     {
@@ -206,7 +224,7 @@ export default function AdminDrawer({ visible, onClose }: AdminDrawerProps) {
           {/* Footer Logout */}
           <View style={{ padding: 24, borderTopWidth: 1, borderTopColor: colors.border }}>
             <Pressable
-              onPress={() => { logout(); onClose(); }}
+              onPress={handleLogout}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',

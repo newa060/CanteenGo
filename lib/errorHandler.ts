@@ -42,10 +42,11 @@ export const classifyError = (error: unknown): AppError => {
     (error as any).message?.toLowerCase().includes('session') ||
     (error as any).message?.toLowerCase().includes('login') ||
     (error as any).message?.toLowerCase().includes('token') ||
+    (error as any).message?.toLowerCase().includes('jwt') ||
     (error as any).message?.toLowerCase().includes('otp') ||
     (error as any).message?.toLowerCase().includes('invalid') ||
     (error as any).message?.toLowerCase().includes('expired')
-  )) {
+  ) || (error as any)?.code === 'PGRST303' || (error as any)?.code === 'PGRST301') {
     return new CanteenGoError('auth', getErrorMessage(error), error, (error as any).code);
   }
 
@@ -90,6 +91,9 @@ export const getUserFriendlyMessage = (err: AppError): string => {
     case 'network':
       return 'Network error. Please check your internet connection and try again.';
     case 'auth':
+      if (err.message.toLowerCase().includes('jwt issued at future') || err.code === 'PGRST303') {
+        return 'Device time is out of sync with the server. Please check your system date/time or log in again.';
+      }
       if (
         err.message.toLowerCase().includes('invalid login') ||
         err.message.toLowerCase().includes('invalid credentials') ||

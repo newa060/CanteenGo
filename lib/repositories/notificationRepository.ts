@@ -48,12 +48,13 @@ export const notificationRepository = {
         .single();
       if (error) {
         // If RLS policy prevents inserting notification for another user, catch silently
-        console.log('[Notification DB Warning]:', error.message);
+        if (!error.message?.includes('row-level security')) {
+          console.warn('[Notification DB Warning]:', error.message);
+        }
         return null;
       }
       return data as Tables<'notifications'>;
     } catch (error) {
-      console.log('[Notification DB Warning]:', error);
       return null;
     }
   },
@@ -89,6 +90,16 @@ export const notificationRepository = {
   async delete(id: string): Promise<void> {
     try {
       const { error } = await supabase.from('notifications').delete().eq('id', id);
+      if (error) throw error;
+    } catch (error) {
+      handleError(error);
+      throw error;
+    }
+  },
+
+  async deleteAllForUser(userId: string): Promise<void> {
+    try {
+      const { error } = await supabase.from('notifications').delete().eq('user_id', userId);
       if (error) throw error;
     } catch (error) {
       handleError(error);

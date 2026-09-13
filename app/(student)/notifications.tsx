@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { Bell, CheckCircle2, AlertCircle, Gift, Trash2 } from 'lucide-react-native';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import {
   useDeleteNotification,
-  useMarkAllNotificationsAsRead,
+  useDeleteAllNotifications,
   useNotifications,
 } from '../../lib/hooks/useNotifications';
 import { useStudentOrders } from '../../lib/hooks/useOrders';
@@ -65,19 +65,10 @@ export default function NotificationsScreen() {
 
   const { data: dbNotifications, isLoading } = useNotifications(user?.id, true);
   const { data: studentOrders } = useStudentOrders(user?.id);
-  const markAllAsRead = useMarkAllNotificationsAsRead();
+  const deleteAllNotifications = useDeleteAllNotifications();
   const deleteNotification = useDeleteNotification();
 
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
-
-  // Auto-mark all DB notifications as read when the screen opens
-  const markedRef = useRef(false);
-  useEffect(() => {
-    if (user?.id && dbNotifications && dbNotifications.some((n) => !n.is_read) && !markedRef.current) {
-      markedRef.current = true;
-      markAllAsRead.mutate(user.id);
-    }
-  }, [user?.id, dbNotifications]);
 
   const allNotifications = useMemo(() => {
     const list: NotificationItem[] = [];
@@ -113,7 +104,8 @@ export default function NotificationsScreen() {
             id: `ord-ready-${o.id}`,
             title: 'Order Ready for Pickup!',
             message: `Your order ${shortDisplay} is READY! Pickup code: ${(o as any).pickup_code || ''}`,
-            type: 'order', is_read: false,
+            type: 'order',
+            is_read: false,
             created_at: (o as any).updated_at || o.created_at,
             isDbRecord: false,
           });
@@ -122,7 +114,8 @@ export default function NotificationsScreen() {
             id: `ord-prep-${o.id}`,
             title: 'Order Accepted & Preparing',
             message: `Your order ${shortDisplay} has been accepted and is being prepared.`,
-            type: 'order', is_read: false,
+            type: 'order',
+            is_read: false,
             created_at: (o as any).updated_at || o.created_at,
             isDbRecord: false,
           });
@@ -130,8 +123,9 @@ export default function NotificationsScreen() {
           list.push({
             id: `ord-pend-${o.id}`,
             title: 'Order Placed',
-            message: `Your order ${shortDisplay} (Rs. ${o.total_amount}) has been received.`,
-            type: 'order', is_read: true,
+            message: `Your order ${shortDisplay} (रू ${o.total_amount}) has been received.`,
+            type: 'order',
+            is_read: true,
             created_at: o.created_at,
             isDbRecord: false,
           });
@@ -164,13 +158,39 @@ export default function NotificationsScreen() {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [dbNotifications, studentOrders, dismissedIds]);
 
-  const unreadCount = useMemo(
-    () => allNotifications.filter((n) => !n.is_read).length,
-    [allNotifications],
-  );
+  const handleDeleteAll = () => {
+    const doDeleteAll = () => {
+      if (user?.id) {
+        deleteAllNotifications.mutate(user.id, {
+          onSuccess: () => {
+            setDismissedIds(new Set(allNotifications.map((n) => n.id)));
+            showSuccessToast('All notifications deleted');
+          },
+        });
+      } else {
+        setDismissedIds(new Set(allNotifications.map((n) => n.id)));
+        showSuccessToast('All notifications deleted');
+      }
+    };
 
-  const handleMarkAll = () => {
-    if (user?.id) markAllAsRead.mutate(user.id);
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to delete all notifications from your panel?')) {
+        doDeleteAll();
+      }
+    } else {
+      Alert.alert(
+        'Delete All Notifications',
+        'Are you sure you want to delete all notifications from your panel?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete All',
+            style: 'destructive',
+            onPress: doDeleteAll,
+          },
+        ]
+      );
+    }
   };
 
   const handleDelete = (item: NotificationItem) => {
@@ -186,7 +206,6 @@ export default function NotificationsScreen() {
     };
 
     if (Platform.OS === 'web') {
-      // Alert.alert does not work on Expo web
       if (window.confirm(`Delete "${item.title}"?`)) doDelete();
     } else {
       Alert.alert(
@@ -224,12 +243,12 @@ export default function NotificationsScreen() {
         <View>
           <Text style={{ fontSize: 20, fontWeight: '900', color: colors.text }}>Notifications</Text>
           <Text style={{ fontSize: 12, color: colors.subtext, marginTop: 2 }}>
-            {unreadCount > 0 ? `${unreadCount} new message${unreadCount > 1 ? 's' : ''}` : 'All caught up!'}
+            {allNotifications.length > 0 ? `${allNotifications.length} notification${allNotifications.length > 1 ? 's' : ''}` : 'All caught up!'}
           </Text>
         </View>
-        {unreadCount > 0 && (
-          <Pressable onPress={handleMarkAll} hitSlop={8}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: '#FF6600' }}>Mark All Read</Text>
+        {allNotifications.length > 0 && (
+          <Pressable onPress={handleDeleteAll} hitSlop={8}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: '#EF4444' }}>Delete All</Text>
           </Pressable>
         )}
       </View>
@@ -258,9 +277,13 @@ export default function NotificationsScreen() {
               {/* Type icon */}
               <View
                 style={{
-                  width: 40, height: 40, borderRadius: 20,
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
                   backgroundColor: `${accent}20`,
-                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
                 <Icon color={accent} size={20} />
@@ -286,10 +309,14 @@ export default function NotificationsScreen() {
                 onPress={() => handleDelete(item)}
                 hitSlop={8}
                 style={({ pressed }) => ({
-                  width: 32, height: 32, borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
                   backgroundColor: pressed ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.08)',
-                  alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, marginLeft: 2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  marginLeft: 2,
                 })}
               >
                 <Trash2 color="#EF4444" size={15} />

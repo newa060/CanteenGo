@@ -77,3 +77,14 @@ export const useDeleteNotification = () => {
     },
   });
 };
+
+export const useDeleteAllNotifications = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => notificationRepository.deleteAllForUser(userId),
+    onSuccess: (_, userId) => {
+      queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_QUERY_KEY, userId] });
+      queryClient.invalidateQueries({ queryKey: [NOTIFICATION_UNREAD_COUNT_KEY, userId] });
+    },
+  });
+};

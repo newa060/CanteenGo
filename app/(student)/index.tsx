@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Bell, Coffee, LogOut, Pizza, Search, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react-native';
+import { Bell, BellOff, Coffee, LogOut, Pizza, Search, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useCartStore } from '../../store/cartStore';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
@@ -20,6 +20,7 @@ import { useUnreadNotificationCount } from '../../lib/hooks/useNotifications';
 import { Product } from '../../types';
 import { Tables } from '../../types/database';
 import { optimizeImageUrl } from '../../lib/cloudinary';
+import { pushNotificationService } from '../../lib/pushNotificationService';
 
 // No static fallback categories — always use what the admin has set
 
@@ -58,6 +59,17 @@ export default function StudentMenuScreen() {
     isAvailable: true,
   });
   const { data: unreadCount = 0 } = useUnreadNotificationCount(user?.id);
+
+  const [pushEnabled, setPushEnabled] = useState(true);
+
+  useEffect(() => {
+    const unsubPush = pushNotificationService.subscribe((enabled) => {
+      setPushEnabled(enabled);
+    });
+    return () => {
+      unsubPush();
+    };
+  }, []);
 
   const displayCategories = useMemo(() => {
     const baseCats: Array<{ id: string; name: string; icon: any }> = [{ id: 'all', name: 'All', icon: UtensilsCrossed }];
@@ -166,6 +178,59 @@ export default function StudentMenuScreen() {
           )}
         </Pressable>
       </View>
+
+      {/* Push Notification Disabled Reminder Banner */}
+      {!pushEnabled && (
+        <View
+          style={{
+            backgroundColor: isDarkMode ? 'rgba(255, 102, 0, 0.12)' : '#FFF7ED',
+            borderBottomWidth: 1,
+            borderBottomColor: isDarkMode ? 'rgba(255, 102, 0, 0.25)' : '#FED7AA',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+            <View
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                backgroundColor: 'rgba(255, 102, 0, 0.18)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <BellOff color="#FF6600" size={15} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>
+                Notifications are disabled
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.subtext, marginTop: 1, lineHeight: 15 }}>
+                Enable to receive latest order status alerts & updates.
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => router.push('/(student)/profile')}
+            style={{
+              backgroundColor: '#FF6600',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 8,
+              flexShrink: 0,
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>Enable</Text>
+          </Pressable>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>

@@ -1,6 +1,8 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const PUSH_ENABLED_KEY = '@canteengo_push_notifications_enabled';
 
 // Dynamically import expo-notifications only if NOT in Expo Go
 let Notifications: typeof import('expo-notifications') | null = null;
@@ -24,7 +26,62 @@ if (!isExpoGo) {
   }
 }
 
+const pushListeners = new Set<(enabled: boolean) => void>();
+const missedListeners = new Set<(hasMissed: boolean) => void>();
+let currentMissed = false;
+
 export const pushNotificationService = {
+  async isEnabled(): Promise<boolean> {
+    try {
+      const val = await AsyncStorage.getItem(PUSH_ENABLED_KEY);
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  },
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    try {
+      await AsyncStorage.setItem(PUSH_ENABLED_KEY, String(enabled));
+      if (enabled) {
+        currentMissed = false;
+        missedListeners.forEach((l) => l(false));
+      }
+      pushListeners.forEach((l) => l(enabled));
+    } catch (e) {
+      console.warn('[Push] Failed to save notification setting:', e);
+    }
+  },
+
+  subscribe(listener: (enabled: boolean) => void) {
+    pushListeners.add(listener);
+    this.isEnabled().then(listener);
+    return () => {
+      pushListeners.delete(listener);
+    };
+  },
+
+  recordMissedNotification() {
+    currentMissed = true;
+    missedListeners.forEach((l) => l(true));
+  },
+
+  hasMissedNotification(): boolean {
+    return currentMissed;
+  },
+
+  subscribeMissed(listener: (hasMissed: boolean) => void) {
+    missedListeners.add(listener);
+    listener(currentMissed);
+    return () => {
+      missedListeners.delete(listener);
+    };
+  },
+
+  clearMissedNotification() {
+    currentMissed = false;
+    missedListeners.forEach((l) => l(false));
+  },
   async requestPermission(): Promise<boolean> {
     if (isExpoGo || !Notifications || !Device) {
       return false;
@@ -50,6 +107,8 @@ export const pushNotificationService = {
 
   async sendLocalNotification(title: string, body: string, data?: Record<string, any>) {
     if (isExpoGo || !Notifications) return;
+    const enabled = await this.isEnabled();
+    if (!enabled) return;
     try {
       await Notifications.scheduleNotificationAsync({
         content: {

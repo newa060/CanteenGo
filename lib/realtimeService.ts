@@ -6,6 +6,7 @@ import { ORDERS_QUERY_KEY } from './hooks/useOrders';
 import { PRODUCTS_QUERY_KEY } from './hooks/useProducts';
 import { NOTIFICATIONS_QUERY_KEY, NOTIFICATION_UNREAD_COUNT_KEY } from './hooks/useNotifications';
 import { Tables } from '../types/database';
+import { pushNotificationService } from './pushNotificationService';
 
 export interface RealtimeSubscriptions {
   orders?: any;
@@ -40,12 +41,18 @@ export const realtimeService = {
           table: 'orders',
           filter: `student_id=eq.${studentId}`,
         },
-        (payload: any) => {
+        async (payload: any) => {
           console.log('[Realtime] Order update for student:', payload);
           queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY, 'student', studentId] });
 
+          const pushEnabled = await pushNotificationService.isEnabled();
+
           if (payload.eventType === 'INSERT') {
-            showInfoToast('New order placed!');
+            if (pushEnabled) {
+              showInfoToast('New order placed!');
+            } else {
+              pushNotificationService.recordMissedNotification();
+            }
           } else if (payload.eventType === 'UPDATE') {
             const newStatus = payload.new?.status as OrderStatus;
             const statusMessages: Record<string, string> = {
@@ -56,10 +63,14 @@ export const realtimeService = {
               cancelled: 'Your order was cancelled.',
             };
             if (statusMessages[newStatus]) {
-              if (newStatus === 'cancelled') {
-                showErrorToast(statusMessages[newStatus]);
+              if (pushEnabled) {
+                if (newStatus === 'cancelled') {
+                  showErrorToast(statusMessages[newStatus]);
+                } else {
+                  showSuccessToast(statusMessages[newStatus]);
+                }
               } else {
-                showSuccessToast(statusMessages[newStatus]);
+                pushNotificationService.recordMissedNotification();
               }
             }
           }
@@ -153,14 +164,19 @@ export const realtimeService = {
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        (payload: any) => {
+        async (payload: any) => {
           console.log('[Realtime] New notification:', payload);
           queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_QUERY_KEY, userId] });
           queryClient.invalidateQueries({ queryKey: [NOTIFICATION_UNREAD_COUNT_KEY, userId] });
 
           const notification = payload.new as Tables<'notifications'>;
           if (notification) {
-            showInfoToast(notification.title);
+            const pushEnabled = await pushNotificationService.isEnabled();
+            if (pushEnabled) {
+              showInfoToast(notification.title);
+            } else {
+              pushNotificationService.recordMissedNotification();
+            }
           }
         }
       )

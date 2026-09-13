@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Bell,
@@ -13,7 +13,8 @@ import {
 } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { getThemeColors, useThemeStore } from '../../store/themeStore';
-import { useUnreadNotificationCount } from '../../lib/hooks/useNotifications';
+import { pushNotificationService } from '../../lib/pushNotificationService';
+import { showSuccessToast, showInfoToast } from '../../lib/errorHandler';
 
 export default function StudentProfileScreen() {
   const { user, logout } = useAuthStore();
@@ -21,11 +22,39 @@ export default function StudentProfileScreen() {
   const colors = getThemeColors(isDarkMode);
   const router = useRouter();
 
-  const { data: unreadCount = 0 } = useUnreadNotificationCount(user?.id);
   const [privacyVisible, setPrivacyVisible] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(true);
 
-  const handleLogout = async () => {
-    await logout();
+  useEffect(() => {
+    pushNotificationService.isEnabled().then(setPushEnabled);
+  }, []);
+
+  const handleTogglePush = async (val: boolean) => {
+    setPushEnabled(val);
+    await pushNotificationService.setEnabled(val);
+    if (val) {
+      await pushNotificationService.requestPermission();
+      showSuccessToast('Push notifications enabled');
+    } else {
+      showInfoToast('Push notifications disabled');
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out from your current account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -109,25 +138,21 @@ export default function StudentProfileScreen() {
             <Switch value={isDarkMode} onValueChange={toggleTheme} trackColor={{ false: '#CBD5E1', true: '#FF6600' }} thumbColor="#FFFFFF" />
           </View>
 
-          <Pressable
-            onPress={() => router.push('/(student)/notifications')}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}
-          >
+          {/* Push Notifications Toggle */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
                 <Bell color="#FF6600" size={18} />
               </View>
               <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Push Notifications</Text>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {(unreadCount as number) > 0 && (
-                <View style={{ backgroundColor: '#FF6600', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center' }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>{unreadCount as number}</Text>
-                </View>
-              )}
-              <ChevronRight color={colors.subtext} size={18} />
-            </View>
-          </Pressable>
+            <Switch
+              value={pushEnabled}
+              onValueChange={handleTogglePush}
+              trackColor={{ false: '#CBD5E1', true: '#FF6600' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
 
           <Pressable onPress={() => setPrivacyVisible(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
